@@ -1,0 +1,7 @@
+REPORTE DE VALIDACIÓN — Base - Prevalencia y dependencia.xlsx
+================================================================
+
+ADVERTENCIAS (1) — no bloquean la publicación:
+  1. Hoja 'Base (0)': 2 fila(s) sin 'Resultado' (se excluirán del dashboard).
+
+Sin errores bloqueantes. ✔

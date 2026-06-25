@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Entrevistas Confianza — Dashboard de seguimiento</title>
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/chartjs-plugin-datalabels.min.js"></script>
+<script src="data-confianza.js"></script>
+<style>
+  :root {
+    --azul: #216686;
+    --rojo: #CD4F4F;
+    --gris: #A6A6A6;
+    --naranja: #DC7528;
+    --verde: #1D7D54;
+    --muted: #808080;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f2f1ef; color: #000; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 14px; }
+
+  /* ---------- Header KPIs ---------- */
+  .topbar {
+    background: #4d4d4d; color: #fff; padding: 14px 18px;
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+  }
+  .back {
+    color: #fff; text-decoration: none; font-size: 22px; line-height: 1;
+    background: #5e5e5e; border-radius: 50%; width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .back:hover { background: var(--rojo); }
+  .kpis { display: flex; flex-wrap: wrap; gap: 30px; flex: 1 1 auto; }
+  .kpi { text-align: center; min-width: 86px; }
+  .kpi .v { font-size: 34px; font-weight: bold; }
+  .kpi .l { font-size: 11px; font-weight: bold; margin-top: 2px; color: #e3e3e3; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; flex: 0 1 auto; align-items: flex-end; }
+  .filter { display: flex; flex-direction: column; gap: 3px; }
+  .filter label { font-size: 11px; font-weight: bold; color: #e3e3e3; }
+  .filter select {
+    font-family: Arial, sans-serif; font-size: 12px; padding: 5px 8px;
+    border: 1px solid #9a9a9a; background: #fff; color: #000; min-width: 140px;
+  }
+  .btnclear {
+    font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #fff;
+    background: #5e5e5e; border: none; border-radius: 4px; padding: 7px 10px; cursor: pointer;
+  }
+  .btnclear:hover { background: var(--rojo); }
+  .btnclear[hidden] { display: none; }
+  .activos { width: 100%; font-size: 10px; font-weight: bold; color: #ffd9d9; }
+  .updated { width: 100%; font-size: 10px; color: #c9c9c9; font-style: italic; text-align: right; }
+
+  /* ---------- Secciones ---------- */
+  .section-bar {
+    background: var(--rojo); color: #fff; text-align: center;
+    font-size: 15px; font-weight: bold; padding: 7px; margin: 14px 0;
+  }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; }
+  .col-left { display: flex; flex-direction: column; }
+  .col-left .card { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .col-left .donut-canvas { flex: 1 1 auto; height: auto; min-height: 360px; }
+  @media (max-width: 900px) {
+    .cols { grid-template-columns: 1fr; }
+    .kpis { justify-content: space-between; }
+  }
+  .card { background: #fff; padding: 18px 20px; border: 1px solid #e2e0dd; margin-bottom: 16px; }
+  .card h3 {
+    color: #000; font-size: 14px; font-weight: bold; text-align: center;
+    margin-bottom: 12px;
+  }
+  .donut-canvas { position: relative; height: 300px; }
+  .line-canvas { position: relative; height: 270px; }
+  .bar-canvas { position: relative; height: 230px; }
+  .dlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; margin-top: 10px; }
+  .dlegend .item { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+  .dlegend .swatch { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .two { grid-template-columns: 1fr; } }
+  .notes { font-size: 9.5px; font-style: italic; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .source { font-size: 10px; font-weight: bold; color: var(--muted); text-align: right; margin: 6px 0 20px; }
+  .empty { text-align: center; color: var(--muted); font-style: italic; padding: 30px 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a class="back" href="index.html" title="Volver a la carátula">&#8592;</a>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="kpiRealizada">—</div><div class="l">Realizada</div></div>
+      <div class="kpi"><div class="v" id="kpiDur">—</div><div class="l">Duración promedio (mins)</div></div>
+    </div>
+    <div class="filters">
+      <div class="filter"><label>Distrito Judicial</label><select id="fDistrito"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Tipo de actor</label><select id="fActor"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Modalidad</label><select id="fModalidad"><option value="">Todas</option></select></div>
+      <button id="btnLimpiar" class="btnclear" type="button" hidden>Limpiar filtros ✕</button>
+    </div>
+    <div class="activos" id="activos"></div>
+    <div class="updated" id="updated"></div>
+  </div>
+
+  <h2 style="text-align:center;color:#000;font-size:17px;margin:14px 0 4px;">Entrevista de actores clave</h2>
+
+  <div class="cols">
+    <!-- ===== Columna izquierda: Datos generales ===== -->
+    <div class="col-left">
+      <div class="section-bar">Datos generales</div>
+      <div class="card">
+        <h3>Estado de coordinación de entrevistas</h3>
+        <div class="donut-canvas"><canvas id="donutEstado"></canvas></div>
+        <div class="dlegend" id="legEstado"></div>
+      </div>
+    </div>
+
+    <!-- ===== Columna derecha: Desagregado ===== -->
+    <div>
+      <div class="section-bar">Desagregado</div>
+      <div class="card">
+        <h3>Distribución de entrevistas</h3>
+        <div class="line-canvas"><canvas id="lineActor"></canvas></div>
+        <div class="dlegend" id="legActor"></div>
+      </div>
+
+      <div class="section-bar">Entrevistas completas</div>
+      <div class="two">
+        <div class="card">
+          <h3>Según ámbito (Nacional / Local)</h3>
+          <div class="bar-canvas"><canvas id="barAmbito"></canvas></div>
+          <div class="dlegend" id="legAmbito"></div>
+        </div>
+        <div class="card">
+          <h3>Según modalidad aplicada</h3>
+          <div class="bar-canvas"><canvas id="barModalidad"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes" id="notaModalidad"></div>
+  <div class="source">FUENTE: APOYO CONSULTORÍA</div>
+</div>
+
+<script>
+/* ================= Configuración ================= */
+const FONT = 'Arial, sans-serif';
+Chart.defaults.font.family = FONT;
+Chart.register(ChartDataLabels);
+
+// Índices de campos en cada registro (ver meta.campos de data-confianza.js)
+const F = { distrito: 0, actor: 1, ambito: 2, modalidad: 3, estado: 4, realizada: 5, dur: 6 };
+
+// Estados de coordinación: orden de embudo y colores corporativos
+const EST_ORDEN = ['Sin respuesta', 'Aceptada', 'En coordinación', 'Rechazada', 'Realizada completa'];
+const EST_COLOR = {
+  'Sin respuesta': '#A6A6A6',
+  'Aceptada': '#C9C9C9',
+  'En coordinación': '#E8A7A7',
+  'Rechazada': '#6E6E6E',
+  'Realizada completa': '#CD4F4F',
+};
+// Orden de los tipos de actor en la línea
+const ACTOR_ORDEN = ['Acompañantes', 'Actores locales', 'Funcionarios del Sistema', 'Multilaterales', 'Prensa'];
+
+// Meta de entrevistas de actores clave por ámbito (Tabla de metas):
+// Local = distritos judiciales tratamiento (40) + control (40) = 80; Nacional = muestra nacional (20). Total = 100.
+const META_AMBITO = { 'Local': 80, 'Nacional': 20 };
+
+// Meta (fija) de entrevistas de actores clave, por tipo de actor. Fuente: tabla de metas (suma = 100).
+const META_ACTOR = {
+  'Acompañantes': 10,
+  'Actores locales': 25,
+  'Funcionarios del Sistema': 45,
+  'Multilaterales': 10,
+  'Prensa': 10,
+};
+
+/* ================= Filtros (desplegables + clic en gráficos, estilo Power BI) ================= */
+const selDistrito = document.getElementById('fDistrito');
+const selActor = document.getElementById('fActor');
+const selModalidad = document.getElementById('fModalidad');
+
+// Estado de filtros unificado. Desplegables: distrito/actor/modalidad. Clic en gráficos: ambito/estado/actor/modalidad.
+const filtros = { distrito: '', actor: '', modalidad: '', ambito: '', estado: '' };
+const ETIQUETA = { distrito: 'Distrito', actor: 'Tipo de actor', modalidad: 'Modalidad', ambito: 'Ámbito', estado: 'Estado' };
+
+function uniq(campo, orden) {
+  const vals = [...new Set(DATA_CONF.registros.map(r => r[campo]).filter(Boolean))];
+  if (orden) vals.sort((a, b) => (orden.indexOf(a) + 1 || 99) - (orden.indexOf(b) + 1 || 99) || a.localeCompare(b));
+  else vals.sort((a, b) => a.localeCompare(b));
+  return vals;
+}
+
+function llenarFiltros() {
+  uniq(F.distrito).forEach(v => selDistrito.add(new Option(v, v)));
+  uniq(F.actor, ACTOR_ORDEN).forEach(v => selActor.add(new Option(v, v)));
+  uniq(F.modalidad).forEach(v => selModalidad.add(new Option(v, v)));
+  selDistrito.addEventListener('change', () => { filtros.distrito = selDistrito.value; render(); });
+  selActor.addEventListener('change', () => { filtros.actor = selActor.value; render(); });
+  selModalidad.addEventListener('change', () => { filtros.modalidad = selModalidad.value; render(); });
+  document.getElementById('btnLimpiar').addEventListener('click', limpiarFiltros);
+}
+
+// Aplica todos los filtros activos EXCEPTO la dimensión 'except' (para no auto-filtrar el gráfico clicado)
+function filtrar(except) {
+  return DATA_CONF.registros.filter(r =>
+    (except === 'distrito'  || !filtros.distrito  || r[F.distrito]  === filtros.distrito)  &&
+    (except === 'actor'     || !filtros.actor     || r[F.actor]     === filtros.actor)     &&
+    (except === 'modalidad' || !filtros.modalidad || r[F.modalidad] === filtros.modalidad) &&
+    (except === 'ambito'    || !filtros.ambito    || r[F.ambito]    === filtros.ambito)    &&
+    (except === 'estado'    || !filtros.estado    || r[F.estado]    === filtros.estado));
+}
+
+function toggleFiltro(dim, valor) {
+  if (valor == null) return;
+  filtros[dim] = (filtros[dim] === valor) ? '' : valor;  // clic en la misma categoría = quitar
+  render();
+}
+function limpiarFiltros() { Object.keys(filtros).forEach(k => { filtros[k] = ''; }); render(); }
+
+// Devuelve un onClick que alterna el filtro de 'dim' según el elemento clicado
+function clicFiltra(dim) {
+  return (evt, els, chart) => {
+    const hit = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+    if (hit.length) toggleFiltro(dim, chart.data.labels[hit[0].index]);
+  };
+}
+function manoHover(evt, els) {
+  const t = evt && evt.native && evt.native.target;
+  if (t) t.style.cursor = els.length ? 'pointer' : 'default';
+}
+
+function sincronizarUI() {
+  selDistrito.value = filtros.distrito;
+  selActor.value = filtros.actor;
+  selModalidad.value = filtros.modalidad;
+  const act = Object.keys(filtros).filter(k => filtros[k]).map(k => `${ETIQUETA[k]}: ${filtros[k]}`);
+  document.getElementById('activos').textContent = act.length
+    ? 'Filtros activos — ' + act.join('   ·   ') + '   (clic de nuevo en la selección o "Limpiar" para quitar)'
+    : '';
+  document.getElementById('btnLimpiar').hidden = act.length === 0;
+}
+
+/* ================= Utilidades ================= */
+const fmt = n => n.toLocaleString('es-PE');
+const pct = (n, d) => d > 0 ? Math.round(n / d * 100) + '%' : '0%';
+function cuenta(regs, campo, valor) { return regs.filter(r => r[campo] === valor).length; }
+function hexRgba(hex, a) {
+  const h = hex.replace('#', ''); const n = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+  return `rgba(${parseInt(n.slice(0, 2), 16)},${parseInt(n.slice(2, 4), 16)},${parseInt(n.slice(4, 6), 16)},${a})`;
+}
+// Resaltado: si hay selección en 'dim' y este valor no es el elegido, se atenúa
+function colHL(color, dim, valor) {
+  return (!filtros[dim] || filtros[dim] === valor) ? color : hexRgba(color, 0.25);
+}
+
+/* ================= Gráficos ================= */
+let chDonut = null, chLine = null, chAmbito = null, chModalidad = null;
+
+function renderDonut(regs) {
+  const cats = EST_ORDEN.filter(c => cuenta(regs, F.estado, c) > 0);
+  const vals = cats.map(c => cuenta(regs, F.estado, c));
+  const cols = cats.map(c => colHL(EST_COLOR[c], 'estado', c));
+  const total = vals.reduce((a, b) => a + b, 0);
+
+  if (chDonut) chDonut.destroy();
+  chDonut = new Chart(document.getElementById('donutEstado'), {
+    type: 'doughnut',
+    data: { labels: cats, datasets: [{ data: vals, backgroundColor: cols, borderColor: '#fff', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '55%', layout: { padding: 30 },
+      onClick: clicFiltra('estado'), onHover: manoHover,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} (${pct(ctx.parsed, total)})` } },
+        datalabels: {
+          anchor: 'end', align: 'end', offset: 2, clamp: true,
+          font: { family: FONT, size: 10, weight: 'bold' },
+          color: ctx => EST_COLOR[cats[ctx.dataIndex]],
+          formatter: v => v > 0 && v / total >= 0.02 ? `${fmt(v)} (${pct(v, total)})` : '',
+        },
+      },
+    },
+  });
+  document.getElementById('legEstado').innerHTML = cats.map(c =>
+    `<div class="item"><span class="swatch" style="background:${EST_COLOR[c]}"></span>${c}</div>`).join('')
+    || '<span class="empty">Sin datos</span>';
+}
+
+function renderLinea(regs) {
+  const real = regs.filter(r => r[F.realizada] === 1);
+  // Tipos de actor con meta definida (orden estándar) + los presentes en datos
+  const cats = ACTOR_ORDEN.filter(a => META_ACTOR[a] != null || real.some(r => r[F.actor] === a));
+  real.map(r => r[F.actor]).forEach(a => { if (a && !cats.includes(a)) cats.push(a); });
+  const vals = cats.map(a => cuenta(real, F.actor, a));
+  const metaVals = cats.map(a => META_ACTOR[a] ?? 0);
+  const cols = cats.map(a => colHL('#A6A6A6', 'actor', a));
+
+  if (chLine) chLine.destroy();
+  chLine = new Chart(document.getElementById('lineActor'), {
+    type: 'bar',
+    data: {
+      labels: cats,
+      datasets: [
+        { type: 'bar', label: 'Realizadas', data: vals,
+          backgroundColor: cols, borderColor: cols, borderWidth: 0,
+          categoryPercentage: 0.6, barPercentage: 0.8, order: 2 },
+        { type: 'line', label: 'Meta total', data: metaVals,
+          borderColor: '#6E6E6E', borderWidth: 2, borderDash: [6, 4],
+          pointBackgroundColor: '#6E6E6E', pointRadius: 4, pointHoverRadius: 5,
+          tension: 0, fill: false, order: 1,
+          datalabels: { anchor: 'end', align: 'top', offset: 4, color: '#6E6E6E',
+            font: { family: FONT, size: 11, weight: 'bold' }, formatter: v => v != null ? fmt(v) : '' } },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, layout: { padding: { top: 26, right: 10 } },
+      onClick: clicFiltra('actor'), onHover: manoHover,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` } },
+        datalabels: {
+          anchor: 'end', align: 'top', offset: 2,
+          color: '#595959', font: { family: FONT, size: 11, weight: 'bold' },
+          formatter: v => v > 0 ? fmt(v) : '',
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: '#000', width: 2 },
+             ticks: { font: { family: FONT, size: 9.5 }, maxRotation: 0, autoSkip: false } },
+        y: { display: false, beginAtZero: true, grace: '20%' },
+      },
+    },
+  });
+  document.getElementById('legActor').innerHTML =
+    '<div class="item"><span class="swatch" style="background:#A6A6A6"></span>Realizadas</div>' +
+    '<div class="item"><span class="swatch" style="width:18px;height:0;border-radius:0;border-top:2px dashed #6E6E6E"></span>Meta total</div>';
+}
+
+function renderAmbito(real) {
+  // Ámbitos con datos o con meta definida (orden Local, Nacional)
+  const amb = ['Local', 'Nacional'].filter(a => META_AMBITO[a] != null || real.some(r => r[F.ambito] === a));
+  real.map(r => r[F.ambito]).forEach(a => { if (a && !amb.includes(a)) amb.push(a); });
+  const realiz = amb.map(a => cuenta(real, F.ambito, a));
+  const meta = amb.map(a => META_AMBITO[a] ?? 0);
+  const cols = amb.map(a => colHL('#A6A6A6', 'ambito', a));
+
+  if (chAmbito) chAmbito.destroy();
+  chAmbito = new Chart(document.getElementById('barAmbito'), {
+    type: 'bar',
+    data: {
+      labels: amb,
+      datasets: [
+        { type: 'bar', label: 'Realizadas', data: realiz,
+          backgroundColor: cols, borderColor: cols, borderWidth: 0,
+          categoryPercentage: 0.6, barPercentage: 0.7, order: 2 },
+        { type: 'line', label: 'Meta total', data: meta,
+          borderColor: '#6E6E6E', borderWidth: 2, borderDash: [6, 4],
+          pointBackgroundColor: '#6E6E6E', pointRadius: 4, pointHoverRadius: 5,
+          tension: 0, fill: false, order: 1,
+          datalabels: { anchor: 'end', align: 'top', offset: 6, color: '#6E6E6E', backgroundColor: null,
+            font: { family: FONT, size: 12, weight: 'bold' }, formatter: v => v != null ? fmt(v) : '' } },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, layout: { padding: { top: 26 } },
+      onClick: clicFiltra('ambito'), onHover: manoHover,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` } },
+        datalabels: {
+          anchor: 'end', align: 'top', offset: 2,
+          backgroundColor: '#d9d9d9', borderRadius: 3, padding: { top: 3, bottom: 3, left: 6, right: 6 },
+          color: '#000', font: { family: FONT, size: 12, weight: 'bold' }, formatter: v => fmt(v),
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: '#000', width: 2 }, ticks: { font: { family: FONT, size: 11 } } },
+        y: { display: false, beginAtZero: true, grace: '22%' },
+      },
+    },
+  });
+  document.getElementById('legAmbito').innerHTML =
+    '<div class="item"><span class="swatch" style="background:#A6A6A6"></span>Realizadas</div>' +
+    '<div class="item"><span class="swatch" style="width:18px;height:0;border-radius:0;border-top:2px dashed #6E6E6E"></span>Meta total</div>';
+}
+
+function renderModalidad(real) {
+  const mod = [...new Set(real.map(r => r[F.modalidad]).filter(Boolean))];
+  const vals = mod.map(m => cuenta(real, F.modalidad, m));
+  const cols = mod.map(m => colHL('#A6A6A6', 'modalidad', m));
+  if (chModalidad) chModalidad.destroy();
+  chModalidad = new Chart(document.getElementById('barModalidad'), {
+    type: 'bar',
+    data: { labels: mod, datasets: [{ data: vals, backgroundColor: cols, borderColor: cols, borderWidth: 0, barPercentage: 0.6 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, layout: { padding: { top: 22 } },
+      onClick: clicFiltra('modalidad'), onHover: manoHover,
+      plugins: {
+        legend: { display: false }, tooltip: { enabled: true },
+        datalabels: {
+          anchor: 'end', align: 'top', offset: 2,
+          backgroundColor: '#d9d9d9', borderRadius: 3, padding: { top: 3, bottom: 3, left: 6, right: 6 },
+          color: '#000', font: { family: FONT, size: 12, weight: 'bold' }, formatter: v => fmt(v),
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: '#000', width: 2 }, ticks: { font: { family: FONT, size: 11 } } },
+        y: { display: false, beginAtZero: true, grace: '20%' },
+      },
+    },
+  });
+}
+
+/* ================= Render principal ================= */
+function render() {
+  // KPIs: con TODOS los filtros activos
+  const real = filtrar().filter(r => r[F.realizada] === 1);
+  document.getElementById('kpiRealizada').textContent = fmt(real.length);
+  const durs = real.map(r => r[F.dur]).filter(v => v != null);
+  document.getElementById('kpiDur').textContent =
+    durs.length ? (durs.reduce((a, b) => a + b, 0) / durs.length).toFixed(1) : '—';
+
+  // Cada gráfico se auto-excluye de su propia dimensión (estilo Power BI: muestra todas sus categorías y resalta la elegida)
+  renderDonut(filtrar('estado'));
+  renderLinea(filtrar('actor'));
+  renderAmbito(filtrar('ambito').filter(r => r[F.realizada] === 1));
+  renderModalidad(filtrar('modalidad').filter(r => r[F.realizada] === 1));
+  sincronizarUI();
+}
+
+document.getElementById('updated').textContent =
+  `Datos actualizados: ${DATA_CONF.meta.generado} — ${DATA_CONF.meta.fuente}`;
+if (DATA_CONF.meta.modalidad_constante) {
+  document.getElementById('notaModalidad').textContent =
+    'Nota: la base actual no incluye una columna de modalidad; se asume "A distancia asistido" para todas las entrevistas.';
+}
+llenarFiltros();
+render();
+</script>
+</body>
+</html>

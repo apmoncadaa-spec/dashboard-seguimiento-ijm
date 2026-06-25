@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Encuestas: Prevalencia y dependencia — Dashboard de seguimiento</title>
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/chartjs-plugin-datalabels.min.js"></script>
+<script src="data.js"></script>
+<style>
+  :root {
+    --azul: #216686;
+    --rojo: #CD4F4F;
+    --gris: #A6A6A6;
+    --naranja: #DC7528;
+    --verde: #1D7D54;
+    --muted: #808080;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f2f1ef; color: #000; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 14px; }
+
+  /* ---------- Header KPIs ---------- */
+  .topbar {
+    background: #4d4d4d;
+    color: #fff;
+    padding: 14px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: center;
+  }
+  .back {
+    color: #fff; text-decoration: none; font-size: 22px; line-height: 1;
+    background: #5e5e5e; border-radius: 50%; width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .back:hover { background: var(--rojo); }
+  .completas-box {
+    border: 1px solid #9a9a9a; padding: 6px 14px; font-size: 13px;
+    font-weight: bold; flex: 0 0 auto;
+  }
+  .kpis { display: flex; flex-wrap: wrap; gap: 26px; flex: 1 1 auto; }
+  .kpi { text-align: center; min-width: 86px; }
+  .kpi .v { font-size: 30px; font-weight: bold; }
+  .kpi .l { font-size: 11px; font-weight: bold; margin-top: 2px; color: #e3e3e3; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; flex: 0 1 auto; }
+  .filter { display: flex; flex-direction: column; gap: 3px; }
+  .filter label { font-size: 11px; font-weight: bold; color: #e3e3e3; }
+  .filter select {
+    font-family: Arial, sans-serif; font-size: 12px; padding: 5px 8px;
+    border: 1px solid #9a9a9a; background: #fff; color: #000; min-width: 150px;
+  }
+  .updated { width: 100%; font-size: 10px; color: #c9c9c9; font-style: italic; text-align: right; }
+
+  /* ---------- Subnavegación (sub-pestañas) ---------- */
+  .subnav { display: flex; gap: 2px; margin-top: 2px; }
+  .subnav a {
+    padding: 9px 18px; background: #d9d9d9; color: #000; text-decoration: none;
+    font-size: 12px; font-weight: bold;
+  }
+  .subnav a:hover { background: #c9c4be; }
+  .subnav a.active { background: #fff; color: var(--azul); border-bottom: 3px solid var(--rojo); }
+
+  /* ---------- Secciones ---------- */
+  .section-bar {
+    background: var(--rojo); color: #fff; text-align: center;
+    font-size: 15px; font-weight: bold; padding: 7px; margin: 14px 0;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .kpis { justify-content: space-between; }
+  }
+  .card { background: #fff; padding: 18px 20px; border: 1px solid #e2e0dd; }
+  .card h3 {
+    color: var(--azul); font-size: 14px; font-weight: bold;
+    text-transform: uppercase; margin-bottom: 2px;
+  }
+  .card .sub { font-size: 11px; color: #000; margin-bottom: 12px; }
+
+  /* Donas */
+  .donuts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .donut-block { flex: 1 1 220px; min-width: 220px; }
+  .donut-block .dtitle { font-size: 12px; font-weight: bold; text-align: center; margin-bottom: 6px; }
+  .donut-canvas { position: relative; height: 230px; }
+  .dlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: center; margin-top: 8px; }
+  .dlegend .item { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: bold; }
+  .dlegend .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
+  /* Línea */
+  .line-canvas { position: relative; height: 280px; }
+  .llegend { display: flex; gap: 20px; margin-bottom: 8px; }
+  .llegend .item { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: bold; }
+
+  /* Tabla */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th {
+    background: #404040; color: #fff; font-weight: bold; text-align: left;
+    padding: 7px 10px; font-size: 12px;
+  }
+  thead th.num, td.num { text-align: right; }
+  tbody td { padding: 6px 10px; border-bottom: 1px solid #e6e6e6; }
+  tbody tr:nth-child(even) { background: #f7f6f5; }
+  tfoot td {
+    background: #404040; color: #fff; font-weight: bold; padding: 7px 10px;
+  }
+
+  /* Distribución por población */
+  .pop { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 10px 0; }
+  .pop .big { display: flex; align-items: center; gap: 10px; }
+  .pop .icon { font-size: 44px; line-height: 1; }
+  .pop .pct { font-size: 30px; font-weight: bold; }
+  .pop .who { font-size: 12px; font-weight: bold; }
+  .pop .arrow { color: var(--rojo); font-size: 38px; font-weight: bold; }
+  .pop .split { display: flex; flex-direction: column; gap: 10px; }
+  .pop .split .row { display: flex; align-items: center; gap: 10px; }
+  .pop .split .pct { font-size: 22px; }
+
+  /* Notas */
+  .notes { font-size: 9.5px; font-style: italic; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+  .source { font-size: 10px; font-weight: bold; color: var(--muted); text-align: right; margin: 6px 0 20px; }
+  .empty { text-align: center; color: var(--muted); font-style: italic; padding: 30px 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a class="back" href="index.html" title="Volver a la carátula">&#8592;</a>
+    <div class="completas-box" id="kpiCompletas">Encuestas completas (— de —)</div>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="kpiAvance">—</div><div class="l">% Avance</div></div>
+      <div class="kpi"><div class="v" id="kpiRechazo">—</div><div class="l">% Rechazo&#185;</div></div>
+      <div class="kpi"><div class="v" id="kpiAdol">—</div><div class="l">Adolescentes</div></div>
+      <div class="kpi"><div class="v" id="kpiMuj">—</div><div class="l">Mujeres</div></div>
+      <div class="kpi"><div class="v" id="kpiDur">—</div><div class="l">Duración promedio&#178;</div></div>
+    </div>
+    <div class="filters">
+      <div class="filter"><label>Población de estudio</label><select id="fGrupo"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Distrito Judicial</label><select id="fDdjj"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Resultado</label><select id="fRes"><option value="">Todas</option></select></div>
+    </div>
+    <div class="updated" id="updated"></div>
+  </div>
+
+  <div class="subnav">
+    <a href="dashboard.html" class="active">Avance de encuestas</a>
+    <a href="registro-encuestadoras.html">Registro diario de encuestadoras</a>
+  </div>
+
+  <div class="section-bar">Avance de encuestas</div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Distribución de resultados de encuestas</h3>
+      <div class="sub">Número de visitas (% del total)&#179;</div>
+      <div class="donuts">
+        <div class="donut-block">
+          <div class="dtitle">Categorización estandarizada</div>
+          <div class="donut-canvas"><canvas id="donutStd"></canvas></div>
+          <div class="dlegend" id="legStd"></div>
+        </div>
+        <div class="donut-block">
+          <div class="dtitle">Categorización APOYO Consultoría</div>
+          <div class="donut-canvas"><canvas id="donutApoyo"></canvas></div>
+          <div class="dlegend" id="legApoyo"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Avance de recojo de información</h3>
+      <div class="sub" id="subLinea">Encuestas completas por día</div>
+      <div class="llegend">
+        <div class="item">
+          <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#216686" stroke-width="3.5"/></svg>
+          <span id="legLinea">Encuestas completas</span>
+        </div>
+      </div>
+      <div class="line-canvas"><canvas id="lineAvance"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Avance por distrito judicial</h3>
+      <div class="sub">Encuestas completas vs. cuota</div>
+      <table>
+        <thead>
+          <tr><th>Distrito Judicial</th><th class="num">Encuestas completas</th><th class="num">Suma de Cuota</th><th class="num">% Avance</th></tr>
+        </thead>
+        <tbody id="tbodyDdjj"></tbody>
+        <tfoot id="tfootDdjj"></tfoot>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Distribución de encuestas completas según población de estudio</h3>
+      <div class="sub">% de encuestas completas</div>
+      <div class="pop" id="popDist"></div>
+    </div>
+  </div>
+
+  <div class="notes">
+    1/ % de rechazo = (Incompletas + Rechazadas) / (Completas + Incompletas + Rechazadas).<br>
+    2/ Duración promedio en minutos de las encuestas completas, excluyendo duraciones atípicas (mayores a 180 minutos).<br>
+    3/ (i) <b>Completa:</b> Encuesta completa, (ii) <b>Cita – Aplazada:</b> Se coordinó una revisita y no se ha realizado un diligenciamiento completo de momento, pero se planea hacerlo,
+    (iii) <b>Ausente:</b> No se tuvo respuesta al "tocar el timbre", o la informante no se encontraba presente en la vivienda al momento de la visita, pero sí habita,
+    (iv) <b>Discapacitada:</b> Se tuvo respuesta al "tocar el timbre", pero la persona no estaba en capacidad de entender el consentimiento o dar respuesta,
+    (v) <b>No hay población objetivo:</b> Se tuvo respuesta al "tocar el timbre", pero se indicó que no había informantes del grupo poblacional habitando en la vivienda,
+    (vi) <b>Rechazada:</b> Se tuvo respuesta al "tocar el timbre", se aceptó el consentimiento, pero la potencial informante (mujer adulta) rechazó directamente el consentimiento,
+    (vii) <b>Incompleta:</b> Se tuvo respuesta al "tocar el timbre", se aceptó el consentimiento, pero el diligenciamiento del cuestionario no fue completado.
+  </div>
+  <div class="source">FUENTE: APOYO CONSULTORÍA</div>
+</div>
+
+<script>
+/* ================= Configuración ================= */
+const FONT = 'Arial, sans-serif';
+Chart.defaults.font.family = FONT;
+Chart.register(ChartDataLabels);
+
+// Orden y colores de las categorías de resultado (paleta corporativa)
+const CAT_ORDEN = ['Completa', 'Incompleta', 'No hay población objetivo en la vivienda',
+                   'Ausente', 'Rechazada', 'Discapacidad', 'Cita - Aplazada'];
+const CAT_COLOR = {
+  'Completa': '#CD4F4F',
+  'Incompleta': '#A6A6A6',
+  'No hay población objetivo en la vivienda': '#D9D9D9',
+  'Ausente': '#6E6E6E',
+  'Rechazada': '#E8A7A7',
+  'Discapacidad': '#216686',
+  'Cita - Aplazada': '#DC7528',
+};
+const CAT_CORTO = { 'No hay población objetivo en la vivienda': 'No hay población objetivo' };
+
+// Índices de los campos en cada registro (ver meta.campos de data.js)
+const F = { fecha: 0, ddjj: 1, grupo: 2, sexo: 3, edad: 4, res: 5, dur: 6 };
+const DUR_MAX_VALIDA = 180; // min — corte de atípicos para el KPI de duración
+
+/* ================= Filtros ================= */
+const selGrupo = document.getElementById('fGrupo');
+const selDdjj = document.getElementById('fDdjj');
+const selRes = document.getElementById('fRes');
+
+function llenarFiltros() {
+  const grupos = [...new Set(DATA.registros.map(r => r[F.grupo]).filter(Boolean))].sort();
+  const ddjjs = [...new Set(DATA.cuotas.map(c => c.ddjj))].sort();
+  const ress = CAT_ORDEN.filter(c => DATA.registros.some(r => r[F.res] === c));
+  grupos.forEach(g => selGrupo.add(new Option(g === 'Mujer' ? 'Mujeres' : g, g)));
+  ddjjs.forEach(d => selDdjj.add(new Option(d, d)));
+  ress.forEach(c => selRes.add(new Option(CAT_CORTO[c] || c, c)));
+  [selGrupo, selDdjj, selRes].forEach(s => s.addEventListener('change', render));
+}
+
+function filtrar() {
+  const g = selGrupo.value, d = selDdjj.value, res = selRes.value;
+  return DATA.registros.filter(r =>
+    (!g || r[F.grupo] === g) && (!d || r[F.ddjj] === d) && (!res || r[F.res] === res));
+}
+
+function cuotaFiltrada(soloDdjj) {
+  const g = selGrupo.value, d = soloDdjj !== undefined ? soloDdjj : selDdjj.value;
+  return DATA.cuotas
+    .filter(c => (!g || c.grupo === g) && (!d || c.ddjj === d))
+    .reduce((s, c) => s + c.cuota, 0);
+}
+
+/* ================= Utilidades ================= */
+const fmt = n => n.toLocaleString('es-PE');
+const pct = (n, d) => d > 0 ? Math.round(n / d * 100) + '%' : '—';
+
+function conteo(regs, campo, valor) { return regs.filter(r => r[campo] === valor).length; }
+
+/* ================= Gráficos (instancias) ================= */
+let chStd = null, chApoyo = null, chLine = null;
+
+function donutConfig(labels, valores, colores) {
+  const total = valores.reduce((a, b) => a + b, 0);
+  return {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: valores, backgroundColor: colores, borderColor: '#fff', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '58%',
+      layout: { padding: 34 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} (${pct(ctx.parsed, total)})` }
+        },
+        datalabels: {
+          anchor: 'end', align: 'end', offset: 2, clamp: true,
+          font: { family: FONT, size: 10, weight: 'bold' },
+          color: ctx => ctx.dataset.backgroundColor[ctx.dataIndex] === '#D9D9D9' ? '#808080'
+                       : ctx.dataset.backgroundColor[ctx.dataIndex],
+          formatter: (v) => v > 0 && v / total >= 0.03 ? `${fmt(v)} (${pct(v, total)})` : '',
+        },
+      },
+    },
+  };
+}
+
+function renderDonuts(regs) {
+  // Estandarizada: solo Completa / Incompleta / Rechazada
+  const catsStd = ['Completa', 'Incompleta', 'Rechazada'];
+  const valStd = catsStd.map(c => conteo(regs, F.res, c));
+  // APOYO: todas las categorías presentes
+  const catsApo = CAT_ORDEN.filter(c => conteo(regs, F.res, c) > 0);
+  const valApo = catsApo.map(c => conteo(regs, F.res, c));
+
+  if (chStd) chStd.destroy();
+  if (chApoyo) chApoyo.destroy();
+  chStd = new Chart(document.getElementById('donutStd'),
+    donutConfig(catsStd.map(c => CAT_CORTO[c] || c), valStd, catsStd.map(c => CAT_COLOR[c])));
+  chApoyo = new Chart(document.getElementById('donutApoyo'),
+    donutConfig(catsApo.map(c => CAT_CORTO[c] || c), valApo, catsApo.map(c => CAT_COLOR[c])));
+
+  const leyenda = (el, cats) => {
+    el.innerHTML = cats.map(c =>
+      `<div class="item"><span class="swatch" style="background:${CAT_COLOR[c]}"></span>${CAT_CORTO[c] || c}</div>`).join('');
+  };
+  leyenda(document.getElementById('legStd'), catsStd);
+  leyenda(document.getElementById('legApoyo'), catsApo);
+}
+
+function renderLinea(regs) {
+  // Sigue el filtro de Resultado: si hay uno específico, regs ya viene filtrado a
+  // ese resultado; si es "Todas", se muestra el avance de completas (por defecto).
+  const resSel = selRes.value;
+  const etiqueta = resSel ? (CAT_CORTO[resSel] || resSel) : 'Encuestas completas';
+  const comp = resSel
+    ? regs.filter(r => r[F.fecha])
+    : regs.filter(r => r[F.res] === 'Completa' && r[F.fecha]);
+  document.getElementById('subLinea').textContent = `${etiqueta} por día`;
+  document.getElementById('legLinea').textContent = etiqueta;
+  const porDia = {};
+  comp.forEach(r => { porDia[r[F.fecha]] = (porDia[r[F.fecha]] || 0) + 1; });
+  const fechas = Object.keys(porDia).sort();
+
+  let labels = [], labelsFull = [], valores = [];
+  if (fechas.length) {
+    // Rango completo de días (incluye días sin encuestas = 0)
+    const d0 = new Date(fechas[0] + 'T00:00:00'), d1 = new Date(fechas[fechas.length - 1] + 'T00:00:00');
+    for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      labels.push(d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }));
+      labelsFull.push(d.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }));
+      valores.push(porDia[iso] || 0);
+    }
+  }
+
+  if (chLine) chLine.destroy();
+  chLine = new Chart(document.getElementById('lineAvance'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: valores,
+        borderColor: '#216686',
+        borderWidth: 3,
+        pointRadius: 3,
+        pointBackgroundColor: '#216686',
+        pointBorderColor: '#216686',
+        pointHoverRadius: 6,
+        tension: 0.35,
+        fill: false,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 44, top: 14 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => items.length ? labelsFull[items[0].dataIndex] : '',
+            label: ctx => ` ${ctx.parsed.y} ${etiqueta.toLowerCase()}`,
+          },
+        },
+        datalabels: {
+          display: ctx => ctx.dataIndex === ctx.dataset.data.length - 1,
+          align: 'right', anchor: 'center', offset: 8,
+          color: '#216686', font: { family: FONT, size: 11, weight: 'bold' },
+          formatter: v => v,
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: '#000', width: 2 },
+          ticks: { font: { family: FONT, size: 9 }, maxTicksLimit: 10, maxRotation: 0 },
+          title: { display: true, text: 'Fecha', font: { family: FONT, size: 9 } },
+        },
+        y: {
+          grid: { display: false },
+          border: { color: '#000', width: 2 },
+          beginAtZero: true,
+          ticks: { font: { family: FONT, size: 9 }, precision: 0 },
+          title: { display: true, text: etiqueta, font: { family: FONT, size: 9 } },
+        },
+      },
+    },
+  });
+}
+
+function renderTabla(regs) {
+  const tbody = document.getElementById('tbodyDdjj');
+  const tfoot = document.getElementById('tfootDdjj');
+  const ddjjs = [...new Set(regs.map(r => r[F.ddjj]).filter(Boolean))].sort(
+    (a, b) => conteo(regs.filter(r => r[F.ddjj] === b), F.res, 'Completa') -
+              conteo(regs.filter(r => r[F.ddjj] === a), F.res, 'Completa') || a.localeCompare(b));
+
+  let totC = 0, totQ = 0, filas = '';
+  ddjjs.forEach(d => {
+    const rs = regs.filter(r => r[F.ddjj] === d);
+    const c = conteo(rs, F.res, 'Completa');
+    const q = cuotaFiltrada(d);
+    totC += c; totQ += q;
+    filas += `<tr><td>${d}</td><td class="num">${fmt(c)}</td><td class="num">${fmt(q)}</td><td class="num">${pct(c, q)}</td></tr>`;
+  });
+  tbody.innerHTML = filas || '<tr><td colspan="4" class="empty">Sin datos para los filtros seleccionados</td></tr>';
+  tfoot.innerHTML = ddjjs.length
+    ? `<tr><td>Total</td><td class="num">${fmt(totC)}</td><td class="num">${fmt(totQ)}</td><td class="num">${pct(totC, totQ)}</td></tr>` : '';
+}
+
+function renderPoblacion(regs) {
+  const comp = regs.filter(r => r[F.res] === 'Completa');
+  const n = comp.length;
+  const muj = comp.filter(r => r[F.grupo] === 'Mujer').length;
+  const ado = comp.filter(r => r[F.grupo] === 'Adolescentes').length;
+  const adoV = comp.filter(r => r[F.grupo] === 'Adolescentes' && r[F.sexo] === 'Masculino').length;
+  const adoM = comp.filter(r => r[F.grupo] === 'Adolescentes' && r[F.sexo] === 'Femenino').length;
+  document.getElementById('popDist').innerHTML = n === 0
+    ? '<div class="empty">Sin encuestas completas para los filtros seleccionados</div>'
+    : `
+    <div class="big"><span class="icon">&#128105;</span><div><div class="pct">${pct(muj, n)}</div><div class="who">Mujeres</div></div></div>
+    <div class="big"><span class="icon">&#129489;&#8205;&#129309;&#8205;&#129489;</span><div><div class="pct">${pct(ado, n)}</div><div class="who">Adolescentes</div></div></div>
+    <div class="arrow">&#10148;</div>
+    <div class="split">
+      <div class="row"><div class="pct">${pct(adoV, n)}</div><div class="who">Adolescentes<br>varones</div></div>
+      <div class="row"><div class="pct">${pct(adoM, n)}</div><div class="who">Adolescentes<br>mujeres</div></div>
+    </div>`;
+}
+
+/* ================= Render principal ================= */
+function render() {
+  const regs = filtrar();
+  const completas = conteo(regs, F.res, 'Completa');
+  const incomp = conteo(regs, F.res, 'Incompleta');
+  const rech = conteo(regs, F.res, 'Rechazada');
+  const cuota = cuotaFiltrada();
+
+  document.getElementById('kpiCompletas').textContent =
+    `Encuestas completas (${fmt(completas)} de ${fmt(cuota)})`;
+  document.getElementById('kpiAvance').textContent = pct(completas, cuota);
+  document.getElementById('kpiRechazo').textContent = pct(incomp + rech, completas + incomp + rech);
+  document.getElementById('kpiAdol').textContent =
+    fmt(regs.filter(r => r[F.res] === 'Completa' && r[F.grupo] === 'Adolescentes').length);
+  document.getElementById('kpiMuj').textContent =
+    fmt(regs.filter(r => r[F.res] === 'Completa' && r[F.grupo] === 'Mujer').length);
+
+  const durs = regs.filter(r => r[F.res] === 'Completa' && r[F.dur] != null && r[F.dur] >= 0 && r[F.dur] <= DUR_MAX_VALIDA)
+                   .map(r => r[F.dur]);
+  document.getElementById('kpiDur').textContent =
+    durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) + "'" : '—';
+
+  renderDonuts(regs);
+  renderLinea(regs);
+  renderTabla(regs);
+  renderPoblacion(regs);
+}
+
+document.getElementById('updated').textContent =
+  `Datos actualizados: ${DATA.meta.generado} — ${DATA.meta.fuente}`;
+llenarFiltros();
+render();
+</script>
+</body>
+</html>

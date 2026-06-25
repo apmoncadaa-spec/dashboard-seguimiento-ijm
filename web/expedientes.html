@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Expedientes: Desempeño — Dashboard de seguimiento</title>
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/chartjs-plugin-datalabels.min.js"></script>
+<script src="data-expedientes.js"></script>
+<style>
+  :root {
+    --azul: #216686;
+    --rojo: #CD4F4F;
+    --gris: #A6A6A6;
+    --gris-osc: #6E6E6E;
+    --naranja: #DC7528;
+    --verde: #1D7D54;
+    --muted: #808080;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f2f1ef; color: #000; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 14px; }
+
+  /* ---------- Header KPIs ---------- */
+  .topbar {
+    background: #4d4d4d; color: #fff; padding: 14px 18px;
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+  }
+  .back {
+    color: #fff; text-decoration: none; font-size: 22px; line-height: 1;
+    background: #5e5e5e; border-radius: 50%; width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .back:hover { background: var(--rojo); }
+  .kpis { display: flex; flex-wrap: wrap; gap: 30px; flex: 1 1 auto; }
+  .kpi { text-align: center; min-width: 86px; }
+  .kpi .v { font-size: 34px; font-weight: bold; }
+  .kpi .l { font-size: 11px; font-weight: bold; margin-top: 2px; color: #e3e3e3; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; flex: 0 1 auto; align-items: flex-end; }
+  .filter { display: flex; flex-direction: column; gap: 3px; }
+  .filter label { font-size: 11px; font-weight: bold; color: #e3e3e3; }
+  .filter select {
+    font-family: Arial, sans-serif; font-size: 12px; padding: 5px 8px;
+    border: 1px solid #9a9a9a; background: #fff; color: #000; min-width: 140px;
+  }
+  .btnclear {
+    font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #fff;
+    background: #5e5e5e; border: none; border-radius: 4px; padding: 7px 10px; cursor: pointer;
+  }
+  .btnclear:hover { background: var(--rojo); }
+  .btnclear[hidden] { display: none; }
+  .activos { width: 100%; font-size: 10px; font-weight: bold; color: #ffd9d9; }
+  .updated { width: 100%; font-size: 10px; color: #c9c9c9; font-style: italic; text-align: right; }
+
+  /* ---------- Secciones ---------- */
+  .page-title { text-align: center; color: #000; font-size: 17px; margin: 14px 0 4px; }
+  .pilot-note {
+    text-align: center; color: var(--muted); font-style: italic; font-size: 12px;
+    margin: 2px 0 10px;
+  }
+  .section-bar {
+    background: var(--rojo); color: #fff; text-align: center;
+    font-size: 15px; font-weight: bold; padding: 7px; margin: 14px 0;
+  }
+  .rev-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: stretch; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) {
+    .rev-row, .two { grid-template-columns: 1fr; }
+    .kpis { justify-content: space-between; }
+  }
+  .card { background: #fff; padding: 18px 20px; border: 1px solid #e2e0dd; margin-bottom: 16px; }
+  .card h3 {
+    color: #000; font-size: 14px; font-weight: bold; text-align: center;
+    margin-bottom: 12px;
+  }
+  .line-canvas { position: relative; height: 270px; }
+  .donut-canvas { position: relative; height: 300px; }
+  /* KPI grande tipo Power BI */
+  .kpi-big { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .kpi-big .v { font-size: 64px; font-weight: bold; color: #1a1a1a; line-height: 1; }
+  .kpi-big .v small { font-size: 28px; font-weight: bold; }
+  .kpi-big .l { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .dlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; margin-top: 10px; }
+  .dlegend .item { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+  .dlegend .swatch { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+  .notes { font-size: 9.5px; font-style: italic; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .source { font-size: 10px; font-weight: bold; color: var(--muted); text-align: right; margin: 6px 0 20px; }
+  .empty { text-align: center; color: var(--muted); font-style: italic; padding: 30px 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a class="back" href="index.html" title="Volver a la carátula">&#8592;</a>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="kpiRecuento">—</div><div class="l">Recuento de expedientes</div></div>
+    </div>
+    <div class="filters">
+      <div class="filter"><label>Revisor</label><select id="fRevisor"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Tipo</label><select id="fTipo"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Distrito Judicial</label><select id="fDistrito"><option value="">Todas</option></select></div>
+      <button id="btnLimpiar" class="btnclear" type="button" hidden>Limpiar filtros ✕</button>
+    </div>
+    <div class="activos" id="activos"></div>
+    <div class="updated" id="updated"></div>
+  </div>
+
+  <h2 class="page-title">Expedientes: Desempeño</h2>
+  <div class="pilot-note">Nota: Datos recogidos en la prueba piloto.</div>
+
+  <div class="section-bar">Revisión</div>
+
+  <div class="rev-row">
+    <div class="card">
+      <h3>Expedientes revisados por día</h3>
+      <div class="line-canvas"><canvas id="lineDia"></canvas></div>
+    </div>
+    <div class="card kpi-big">
+      <div class="v" id="kpiTiempo">—</div>
+      <div class="l">Tiempo promedio de revisión</div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <h3>Casos por Distrito Judicial</h3>
+      <div class="donut-canvas"><canvas id="donutDistrito"></canvas></div>
+      <div class="dlegend" id="legDistrito"></div>
+    </div>
+    <div class="card">
+      <h3>Total de expedientes por tipo de caso</h3>
+      <div class="donut-canvas"><canvas id="donutTipo"></canvas></div>
+      <div class="dlegend" id="legTipo"></div>
+    </div>
+  </div>
+
+  <div class="notes">Datos recogidos en la prueba piloto. El tiempo de revisión se mide entre el inicio y el fin del llenado de cada ficha de expediente.</div>
+  <div class="source">FUENTE: APOYO CONSULTORÍA</div>
+</div>
+
+<script>
+/* ================= Configuración ================= */
+const FONT = 'Arial, sans-serif';
+Chart.defaults.font.family = FONT;
+Chart.register(ChartDataLabels);
+
+// Índices de campos en cada registro (ver meta.campos de data-expedientes.js)
+const F = { codigo: 0, revisor: 1, distrito: 2, tipo: 3, fecha: 4, minutos: 5 };
+
+// Paleta corporativa para categorías (orden de uso). Rojo primero para que el
+// distrito/tipo más frecuente salga rojo, como en el Power BI.
+const PALETTE = ['#CD4F4F', '#A6A6A6', '#6E6E6E', '#216686', '#DC7528', '#1D7D54'];
+
+/* ================= Filtros (desplegables + clic en gráficos, estilo Power BI) ================= */
+const selRevisor = document.getElementById('fRevisor');
+const selTipo = document.getElementById('fTipo');
+const selDistrito = document.getElementById('fDistrito');
+
+// Estado de filtros unificado. Desplegables: revisor/tipo/distrito. Clic: distrito/tipo/fecha.
+const filtros = { revisor: '', tipo: '', distrito: '', fecha: '' };
+const ETIQUETA = { revisor: 'Revisor', tipo: 'Tipo', distrito: 'Distrito', fecha: 'Fecha' };
+
+function uniq(campo) {
+  return [...new Set(DATA_EXP.registros.map(r => r[campo]).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+function llenarFiltros() {
+  uniq(F.revisor).forEach(v => selRevisor.add(new Option(v, v)));
+  uniq(F.tipo).forEach(v => selTipo.add(new Option(v, v)));
+  uniq(F.distrito).forEach(v => selDistrito.add(new Option(v, v)));
+  selRevisor.addEventListener('change', () => { filtros.revisor = selRevisor.value; render(); });
+  selTipo.addEventListener('change', () => { filtros.tipo = selTipo.value; render(); });
+  selDistrito.addEventListener('change', () => { filtros.distrito = selDistrito.value; render(); });
+  document.getElementById('btnLimpiar').addEventListener('click', limpiarFiltros);
+}
+
+// Aplica todos los filtros activos EXCEPTO la dimensión 'except' (no auto-filtrar el gráfico clicado)
+function filtrar(except) {
+  return DATA_EXP.registros.filter(r =>
+    (except === 'revisor'  || !filtros.revisor  || r[F.revisor]  === filtros.revisor)  &&
+    (except === 'tipo'     || !filtros.tipo     || r[F.tipo]     === filtros.tipo)     &&
+    (except === 'distrito' || !filtros.distrito || r[F.distrito] === filtros.distrito) &&
+    (except === 'fecha'    || !filtros.fecha    || r[F.fecha]    === filtros.fecha));
+}
+
+function toggleFiltro(dim, valor) {
+  if (valor == null) return;
+  filtros[dim] = (filtros[dim] === valor) ? '' : valor;  // clic en la misma categoría = quitar
+  render();
+}
+function limpiarFiltros() { Object.keys(filtros).forEach(k => { filtros[k] = ''; }); render(); }
+
+function clicFiltra(dim) {
+  return (evt, els, chart) => {
+    const hit = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+    if (hit.length) toggleFiltro(dim, chart.data.labels[hit[0].index]);
+  };
+}
+function manoHover(evt, els) {
+  const t = evt && evt.native && evt.native.target;
+  if (t) t.style.cursor = els.length ? 'pointer' : 'default';
+}
+
+/* ================= Utilidades ================= */
+const fmt = n => n.toLocaleString('es-PE');
+function pct(n, d) {
+  if (!d) return '0%';
+  return parseFloat((n / d * 100).toFixed(2)) + '%';
+}
+function fmtFecha(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+function conteo(regs, campo) {
+  const m = {};
+  regs.forEach(r => { const v = r[campo]; if (v) m[v] = (m[v] || 0) + 1; });
+  const cats = Object.keys(m).sort((a, b) => m[b] - m[a] || a.localeCompare(b, 'es'));
+  return { cats, vals: cats.map(c => m[c]), total: cats.reduce((s, c) => s + m[c], 0) };
+}
+function hexRgba(hex, a) {
+  const h = hex.replace('#', ''); const n = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+  return `rgba(${parseInt(n.slice(0, 2), 16)},${parseInt(n.slice(2, 4), 16)},${parseInt(n.slice(4, 6), 16)},${a})`;
+}
+// Resaltado: si hay selección en 'dim' y este valor no es el elegido, se atenúa
+function colHL(color, dim, valor) {
+  return (!filtros[dim] || filtros[dim] === valor) ? color : hexRgba(color, 0.22);
+}
+
+function sincronizarUI() {
+  selRevisor.value = filtros.revisor;
+  selTipo.value = filtros.tipo;
+  selDistrito.value = filtros.distrito;
+  const act = Object.keys(filtros).filter(k => filtros[k])
+    .map(k => `${ETIQUETA[k]}: ${k === 'fecha' ? fmtFecha(filtros[k]) : filtros[k]}`);
+  document.getElementById('activos').textContent = act.length
+    ? 'Filtros activos — ' + act.join('   ·   ') + '   (clic de nuevo en la selección o "Limpiar" para quitar)'
+    : '';
+  document.getElementById('btnLimpiar').hidden = act.length === 0;
+}
+
+/* ================= Gráficos ================= */
+let chLine = null, chDist = null, chTipo = null;
+let diasISO = [];
+
+function renderLinea(regs) {
+  const m = {};
+  regs.forEach(r => { const f = r[F.fecha]; if (f) m[f] = (m[f] || 0) + 1; });
+  diasISO = Object.keys(m).sort();
+  const labels = diasISO.map(fmtFecha);
+  const vals = diasISO.map(d => m[d]);
+  const ptCols = diasISO.map(d => colHL('#CD4F4F', 'fecha', d));
+
+  if (chLine) chLine.destroy();
+  chLine = new Chart(document.getElementById('lineDia'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: vals, borderColor: '#CD4F4F', borderWidth: 3,
+        pointBackgroundColor: ptCols, pointBorderColor: ptCols,
+        pointRadius: 5, pointHoverRadius: 6, tension: 0, fill: false,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 24, right: 16, left: 6 } },
+      onClick: (evt, els, chart) => {
+        const hit = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+        if (hit.length) toggleFiltro('fecha', diasISO[hit[0].index]);
+      },
+      onHover: manoHover,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} expediente(s)` } },
+        datalabels: {
+          anchor: 'end', align: 'top', offset: 6,
+          color: '#CD4F4F', font: { family: FONT, size: 12, weight: 'bold' }, formatter: v => fmt(v),
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false }, border: { color: '#000', width: 2 },
+          ticks: { font: { family: FONT, size: 10 }, maxRotation: 0, autoSkip: false, color: '#000' },
+        },
+        y: { display: false, beginAtZero: true, grace: '20%' },
+      },
+    },
+  });
+}
+
+function renderDonut(canvasId, legId, regs, campo, dim) {
+  const { cats, vals, total } = conteo(regs, campo);
+  const base = cats.map((_, i) => PALETTE[i % PALETTE.length]);
+  const cols = cats.map((c, i) => colHL(base[i], dim, c));
+
+  const chart = new Chart(document.getElementById(canvasId), {
+    type: 'doughnut',
+    data: { labels: cats, datasets: [{ data: vals, backgroundColor: cols, borderColor: '#fff', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '55%', layout: { padding: 30 },
+      onClick: clicFiltra(dim), onHover: manoHover,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} (${pct(ctx.parsed, total)})` } },
+        datalabels: {
+          anchor: 'end', align: 'end', offset: 2, clamp: true,
+          font: { family: FONT, size: 10, weight: 'bold' },
+          color: ctx => base[ctx.dataIndex],
+          formatter: v => v > 0 ? `${fmt(v)} (${pct(v, total)})` : '',
+        },
+      },
+    },
+  });
+  document.getElementById(legId).innerHTML = cats.length
+    ? cats.map((c, i) => `<div class="item"><span class="swatch" style="background:${base[i]}"></span>${c}</div>`).join('')
+    : '<span class="empty">Sin datos</span>';
+  return chart;
+}
+
+/* ================= Render principal ================= */
+function render() {
+  const regsAll = filtrar();   // KPIs: con todos los filtros activos
+
+  document.getElementById('kpiRecuento').textContent = fmt(regsAll.length);
+
+  const mins = regsAll.map(r => r[F.minutos]).filter(v => v != null);
+  document.getElementById('kpiTiempo').innerHTML = mins.length
+    ? `${fmt(Math.round(mins.reduce((a, b) => a + b, 0) / mins.length))} <small>min</small>`
+    : '—';
+
+  renderLinea(filtrar('fecha'));
+  if (chDist) chDist.destroy();
+  if (chTipo) chTipo.destroy();
+  chDist = renderDonut('donutDistrito', 'legDistrito', filtrar('distrito'), F.distrito, 'distrito');
+  chTipo = renderDonut('donutTipo', 'legTipo', filtrar('tipo'), F.tipo, 'tipo');
+  sincronizarUI();
+}
+
+document.getElementById('updated').textContent =
+  `Datos actualizados: ${DATA_EXP.meta.generado} — ${DATA_EXP.meta.fuente}`;
+llenarFiltros();
+render();
+</script>
+</body>
+</html>

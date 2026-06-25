@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Registro diario de encuestadoras — Dashboard de seguimiento</title>
+<script src="data-registro.js"></script>
+<style>
+  :root {
+    --azul: #216686;
+    --rojo: #CD4F4F;
+    --gris: #A6A6A6;
+    --muted: #808080;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f2f1ef; color: #000; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 14px; }
+
+  .topbar {
+    background: #4d4d4d; color: #fff; padding: 14px 18px;
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+  }
+  .back {
+    color: #fff; text-decoration: none; font-size: 22px; line-height: 1;
+    background: #5e5e5e; border-radius: 50%; width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .back:hover { background: var(--rojo); }
+  .kpis { display: flex; flex-wrap: wrap; gap: 26px; flex: 1 1 auto; }
+  .kpi { text-align: center; min-width: 86px; }
+  .kpi .v { font-size: 30px; font-weight: bold; }
+  .kpi .l { font-size: 11px; font-weight: bold; margin-top: 2px; color: #e3e3e3; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; flex: 0 1 auto; }
+  .filter { display: flex; flex-direction: column; gap: 3px; }
+  .filter label { font-size: 11px; font-weight: bold; color: #e3e3e3; }
+  .filter select {
+    font-family: Arial, sans-serif; font-size: 12px; padding: 5px 8px;
+    border: 1px solid #9a9a9a; background: #fff; color: #000; min-width: 130px;
+  }
+  .updated { width: 100%; font-size: 10px; color: #c9c9c9; font-style: italic; text-align: right; }
+
+  /* Subnavegación (sub-pestañas de Prevalencia) */
+  .subnav { display: flex; gap: 2px; margin-top: 2px; }
+  .subnav a {
+    padding: 9px 18px; background: #d9d9d9; color: #000; text-decoration: none;
+    font-size: 12px; font-weight: bold;
+  }
+  .subnav a:hover { background: #c9c4be; }
+  .subnav a.active { background: #fff; color: var(--azul); border-bottom: 3px solid var(--rojo); }
+
+  .title { color: var(--azul); font-size: 16px; font-weight: bold; margin: 16px 0 4px; }
+  .sub { font-size: 11px; color: #000; margin-bottom: 10px; }
+
+  /* Matriz */
+  .matrix-wrap { overflow-x: auto; border: 1px solid #d9d9d9; background: #fff; }
+  table.matrix { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+  table.matrix th, table.matrix td { border: 1px solid #e6e6e6; padding: 4px 7px; text-align: center; }
+  table.matrix thead th {
+    background: #404040; color: #fff; font-weight: bold; position: sticky; top: 0; z-index: 2;
+  }
+  table.matrix th.cod, table.matrix th.enc, table.matrix th.ddjj { text-align: left; }
+  /* Columnas fijas a la izquierda */
+  table.matrix .sticky-1 { position: sticky; left: 0;   z-index: 3; min-width: 42px; }
+  table.matrix .sticky-2 { position: sticky; left: 42px; z-index: 3; min-width: 190px; text-align: left; }
+  table.matrix .sticky-3 { position: sticky; left: 232px; z-index: 3; min-width: 110px; text-align: left; }
+  table.matrix thead .sticky-1, table.matrix thead .sticky-2, table.matrix thead .sticky-3 { z-index: 4; }
+  table.matrix tbody td.idcell { background: #fff; font-weight: normal; }
+  table.matrix tbody td.enc { font-weight: bold; }
+  table.matrix tbody tr:nth-child(even) td.idcell { background: #f7f6f5; }
+  table.matrix .tot { background: #ededed; font-weight: bold; }
+  table.matrix tfoot td { background: #404040; color: #fff; font-weight: bold; position: sticky; bottom: 0; }
+  table.matrix .datehead { min-width: 34px; font-size: 10px; }
+  .legend-scale { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); margin: 8px 0; }
+  .legend-scale .bar { width: 120px; height: 12px; background: linear-gradient(90deg, #ffffff, #216686); border: 1px solid #ccc; }
+  .notes { font-size: 9.5px; font-style: italic; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .source { font-size: 10px; font-weight: bold; color: var(--muted); text-align: right; margin: 6px 0 20px; }
+  .empty { text-align: center; color: var(--muted); font-style: italic; padding: 30px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a class="back" href="index.html" title="Volver a la carátula">&#8592;</a>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="kpiTotal">—</div><div class="l">Total (según filtros)</div></div>
+      <div class="kpi"><div class="v" id="kpiEnc">—</div><div class="l">Encuestadoras</div></div>
+      <div class="kpi"><div class="v" id="kpiProm">—</div><div class="l">Promedio diario&#185;</div></div>
+    </div>
+    <div class="filters">
+      <div class="filter"><label>Grupo</label><select id="fGrupo">
+        <option value="Ambos">Ambos</option><option value="Adolescentes">Adolescentes</option><option value="Mujeres">Mujeres</option>
+      </select></div>
+      <div class="filter"><label>Resultado</label><select id="fRes"></select></div>
+      <div class="filter"><label>Base de fecha</label><select id="fBase">
+        <option value="inicio">Fecha de inicio</option><option value="fin">Fecha de fin</option>
+      </select></div>
+    </div>
+    <div class="updated" id="updated"></div>
+  </div>
+
+  <div class="subnav">
+    <a href="dashboard.html">Avance de encuestas</a>
+    <a href="registro-encuestadoras.html" class="active">Registro diario de encuestadoras</a>
+  </div>
+
+  <div class="title">Registro diario de encuestadoras</div>
+  <div class="sub" id="subT">Número de encuestas por encuestadora y día</div>
+
+  <div class="legend-scale">
+    <span>Menos</span><span class="bar"></span><span>Más</span>
+    <span style="margin-left:12px;">— el color indica la cantidad de encuestas del día</span>
+  </div>
+
+  <div class="matrix-wrap" id="matrixWrap"></div>
+
+  <div class="notes" id="notas">
+    1/ Promedio diario = total de encuestas (según filtros) entre el número de días con actividad.
+  </div>
+  <div class="source">FUENTE: APOYO CONSULTORÍA</div>
+</div>
+
+<script>
+/* ================= Configuración ================= */
+const F = { cod: 0, grupo: 1, res: 2, fi: 3, ff: 4 };
+// Orden de resultados para el desplegable
+const RES_ORDEN = ['Completa', 'Cita - Aplazada', 'Ausente', 'Discapacitada',
+                   'No habita población objetivo en la vivienda', 'Rechazada', 'Incompleta'];
+
+const selGrupo = document.getElementById('fGrupo');
+const selRes = document.getElementById('fRes');
+const selBase = document.getElementById('fBase');
+
+/* ================= Filtros ================= */
+function llenarRes() {
+  selRes.add(new Option('Todos', 'Todos'));
+  const presentes = new Set(DATA_REG.registros.map(r => r[F.res]).filter(Boolean));
+  RES_ORDEN.filter(c => presentes.has(c)).forEach(c => selRes.add(new Option(c, c)));
+  selRes.value = 'Completa';   // por defecto, como el Excel
+  [selGrupo, selRes, selBase].forEach(s => s.addEventListener('change', render));
+}
+
+function filtrar() {
+  const g = selGrupo.value, res = selRes.value;
+  return DATA_REG.registros.filter(r =>
+    (g === 'Ambos' || r[F.grupo] === g) && (res === 'Todos' || r[F.res] === res));
+}
+
+/* ================= Utilidades ================= */
+const fmt = n => n.toLocaleString('es-PE');
+const codNum = c => { const n = parseInt(c, 10); return isNaN(n) ? 9999 : n; };
+function fechaCorta(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }).replace('.', '');
+}
+// Interpolación de color blanco -> azul corporativo (#216686)
+function heatColor(v, max) {
+  if (!v || max <= 0) return { bg: '#ffffff', fg: '#000' };
+  const t = Math.min(1, v / max);
+  const r = Math.round(255 + t * (33 - 255));
+  const g = Math.round(255 + t * (102 - 255));
+  const b = Math.round(255 + t * (134 - 255));
+  return { bg: `rgb(${r},${g},${b})`, fg: t > 0.55 ? '#fff' : '#000' };
+}
+
+/* ================= Render ================= */
+function render() {
+  const base = selBase.value === 'fin' ? F.ff : F.fi;
+  const regs = filtrar();
+
+  // Encuestadoras a mostrar (las del mapa), ordenadas por su código primario
+  const encs = Object.keys(DATA_REG.encuestadoras).sort((a, b) =>
+    codNum(DATA_REG.encuestadoras[a].cod) - codNum(DATA_REG.encuestadoras[b].cod));
+  const encSet = new Set(encs);
+
+  // Matriz: conteo[cod][fecha]
+  const conteo = {}; const fechasSet = new Set();
+  encs.forEach(c => conteo[c] = {});
+  regs.forEach(r => {
+    const c = r[F.cod], f = r[base];
+    if (!f || !encSet.has(c)) return;
+    conteo[c][f] = (conteo[c][f] || 0) + 1;
+    fechasSet.add(f);
+  });
+  const fechas = [...fechasSet].sort();
+
+  // KPIs
+  let granTotal = 0;
+  encs.forEach(c => fechas.forEach(f => granTotal += (conteo[c][f] || 0)));
+  document.getElementById('kpiTotal').textContent = fmt(granTotal);
+  document.getElementById('kpiEnc').textContent = fmt(encs.filter(c => fechas.some(f => conteo[c][f])).length);
+  document.getElementById('kpiProm').textContent = fechas.length ? (granTotal / fechas.length).toFixed(1) : '—';
+
+  if (!fechas.length) {
+    document.getElementById('matrixWrap').innerHTML = '<div class="empty">Sin encuestas para los filtros seleccionados.</div>';
+    return;
+  }
+
+  // Máximo para la escala de color
+  let maxCell = 0;
+  encs.forEach(c => fechas.forEach(f => { if ((conteo[c][f] || 0) > maxCell) maxCell = conteo[c][f]; }));
+
+  // Totales por día
+  const totDia = {}; fechas.forEach(f => totDia[f] = encs.reduce((s, c) => s + (conteo[c][f] || 0), 0));
+
+  // --- Construir tabla ---
+  let head = '<thead><tr>' +
+    '<th class="cod sticky-1">Cód.</th>' +
+    '<th class="enc sticky-2">Encuestadora</th>' +
+    '<th class="ddjj sticky-3">Distrito Judicial</th>' +
+    fechas.map(f => `<th class="datehead">${fechaCorta(f)}</th>`).join('') +
+    '<th class="tot">Total</th></tr></thead>';
+
+  let body = '<tbody>';
+  encs.forEach(c => {
+    const info = DATA_REG.encuestadoras[c];
+    const filaTot = fechas.reduce((s, f) => s + (conteo[c][f] || 0), 0);
+    let celdas = fechas.map(f => {
+      const v = conteo[c][f] || 0;
+      const col = heatColor(v, maxCell);
+      return `<td style="background:${col.bg};color:${col.fg}">${v || ''}</td>`;
+    }).join('');
+    body += `<tr>` +
+      `<td class="idcell sticky-1">${info.cod}</td>` +
+      `<td class="idcell enc sticky-2">${info.nombre}</td>` +
+      `<td class="idcell sticky-3">${info.ddjj}</td>` +
+      celdas +
+      `<td class="tot">${fmt(filaTot)}</td></tr>`;
+  });
+  body += '</tbody>';
+
+  let foot = '<tfoot><tr>' +
+    '<td class="sticky-1"></td>' +
+    '<td class="sticky-2">Total por día</td>' +
+    '<td class="sticky-3"></td>' +
+    fechas.map(f => `<td>${fmt(totDia[f])}</td>`).join('') +
+    `<td>${fmt(granTotal)}</td></tr></tfoot>`;
+
+  document.getElementById('matrixWrap').innerHTML =
+    `<table class="matrix">${head}${body}${foot}</table>`;
+
+  const resTxt = selRes.value === 'Todos' ? 'todas las visitas' : `resultado "${selRes.value}"`;
+  document.getElementById('subT').textContent =
+    `Número de encuestas (${resTxt}) por encuestadora y día — base: ${selBase.value === 'fin' ? 'fecha de fin' : 'fecha de inicio'}.`;
+}
+
+document.getElementById('updated').textContent =
+  `Datos actualizados: ${DATA_REG.meta.generado} — ${DATA_REG.meta.fuente}`;
+llenarRes();
+render();
+</script>
+</body>
+</html>

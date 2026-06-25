@@ -1,0 +1,64 @@
+name: Validar y publicar dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
+      - "scripts/**"
+      - "web/**"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch: {}   # permite lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install pandas openpyxl
+
+      - name: "Paso 1: validar la base (si falla, NO se publica)"
+        run: python scripts/validate.py
+
+      - name: Subir reporte de validación
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-validacion
+          path: validation_report.txt
+
+      - name: "Paso 2: regenerar web/data.js"
+        run: python scripts/build_data.py
+
+      - name: "Paso 3: empaquetar la web"
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: "Paso 4: publicar en GitHub Pages"
+        id: deployment
+        uses: actions/deploy-pages@v4
