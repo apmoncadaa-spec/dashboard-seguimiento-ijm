@@ -39,7 +39,10 @@ EST_NORM = {
 OUT_GF = ROOT / "web" / "data-gf.js"
 
 # --- Registro diario de encuestadoras (subpestaña de Prevalencia) -----------
-EXCEL_REG = ROOT / "data" / "Registro diario de encuestadoras.xlsx"
+# Fuente: extracto liviano de las DOS bases crudas (lo genera
+# scripts/extraer_registro.py). Reemplaza al antiguo
+# "Registro diario de encuestadoras.xlsx".
+REG_EXTRACT = ROOT / "data" / "Registro - bases crudas.csv"
 OUT_REG = ROOT / "web" / "data-registro.js"
 # Fuente oficial de nombres/DDJJ por código de persona (evita el roster manual
 # del Excel, que puede tener códigos mal escritos u omisiones).
@@ -100,11 +103,10 @@ RES_MAP = {
     "01": "Completa", "02": "Cita - Aplazada", "03": "Ausente", "04": "Discapacitada",
     "05": "No habita población objetivo en la vivienda", "06": "Rechazada", "07": "Incompleta",
 }
-# Hojas P2 del archivo de Registro y el grupo poblacional que representan.
-# Las columnas se localizan POR NOMBRE (no por posición), para que el dashboard
-# siga funcionando aunque el cuestionario cambie y se reordenen las columnas.
-REG_SHEETS = {"P2_MUJERES": "Mujeres", "P2_ADOLESCENTES": "Adolescentes"}
+# Columnas del extracto liviano (data/Registro - bases crudas.csv). El grupo
+# poblacional (Adolescentes/Mujeres) ya viene como una columna del extracto.
 REG_COLNAMES = {
+    "grupo": "grupo",
     "cod": "codencu",
     "enc": "encuestador",   # nombre de la encuestadora registrado en la base
     "fi": "fechainicioenc",
@@ -346,22 +348,23 @@ def build_gf() -> None:
 
 
 def build_registro() -> None:
-    """Genera web/data-registro.js desde 'Registro diario de encuestadoras.xlsx'.
+    """Genera web/data-registro.js desde el extracto de las bases crudas.
 
     Microdatos por encuesta (código de encuestadora, grupo, resultado, fecha de
-    inicio y de fin) leídos de las hojas P2_MUJERES y P2_ADOLESCENTES. Los
-    nombres y DDJJ se toman de BD Personal.xlsx (fuente oficial), de modo que el
-    total cuadra con el avance general y no depende del roster manual del Excel.
-    El navegador arma la matriz encuestadora x fecha y aplica los filtros
-    (Grupo, Resultado, base de fecha Inicio/Fin).
+    inicio y de fin) leídos del extracto 'Registro - bases crudas.csv', que
+    scripts/extraer_registro.py arma a partir de las dos bases crudas de campo
+    (DATA_ADOLESCENTES y DATA_MUJERES). Los nombres y DDJJ se toman de
+    BD Personal.xlsx (fuente oficial) por código, de modo que el total cuadra con
+    el avance general. El navegador arma la matriz encuestadora x fecha y aplica
+    los filtros (Grupo, Resultado, Distrito Judicial, base de fecha Inicio/Fin).
     """
-    if not EXCEL_REG.exists():
-        print(f"AVISO: no se encontró {EXCEL_REG.name}; se omite data-registro.js")
+    if not REG_EXTRACT.exists():
+        print(f"AVISO: no se encontró {REG_EXTRACT.name}; se omite data-registro.js")
+        print("   (genera el extracto con: python scripts/extraer_registro.py)")
         return
 
+    import csv as _csv
     from collections import Counter, defaultdict
-
-    wb = openpyxl.load_workbook(EXCEL_REG, data_only=True, read_only=True)
 
     # --- BD Personal: solo se usa para el DDJJ (por código) y la grafía limpia
     #     del nombre. La IDENTIDAD de quién hizo cada encuesta sale de la base. ---
@@ -372,7 +375,7 @@ def build_registro() -> None:
         if _k and _i.get("ddjj") and _k not in bd_ddjj_por_nombre:
             bd_ddjj_por_nombre[_k] = _i["ddjj"]
 
-    # --- Microdatos de P2_MUJERES y P2_ADOLESCENTES ---
+    # --- Microdatos del extracto (una fila por encuesta) ---
     # La persona se identifica por el NOMBRE 'encuestador' de la base (no por el
     # código): así un mismo nombre con dos códigos se agrupa, y un código que dos
     # personas usaron por error no las mezcla.
@@ -380,34 +383,27 @@ def build_registro() -> None:
     codes_por_persona = defaultdict(Counter)       # persona -> Counter(cod)
     nombres_por_persona = defaultdict(Counter)     # persona -> Counter(nombre crudo)
     ddjj_por_persona = defaultdict(Counter)        # persona -> Counter(ddjj por código)
-    for hoja, grupo in REG_SHEETS.items():
-        if hoja not in wb.sheetnames:
-            continue
-        ws = wb[hoja]
-        filas = ws.iter_rows(min_row=1, values_only=True)
-        header = next(filas, None)
-        if header is None:
-            continue
-        # Localizar columnas por nombre (robusto ante reordenamientos)
-        hmap = {str(h).strip(): i for i, h in enumerate(header) if h is not None}
-        idx = {k: hmap.get(name) for k, name in REG_COLNAMES.items()}
-        if idx["cod"] is None and idx["enc"] is None:
-            print(f"AVISO: {hoja} sin columna 'codencu' ni 'encuestador'; se omite.")
-            continue
-        maxi = max(i for i in idx.values() if i is not None)
-        for row in filas:  # continúa desde la fila 2 (datos)
-            if row is None or len(row) <= maxi:
-                continue
-            cod = _norm_cod(row[idx["cod"]]) if idx["cod"] is not None else ""
-            nombre_base = _clean(row[idx["enc"]]) if idx["enc"] is not None else ""
+    with open(REG_EXTRACT, encoding="utf-8-sig", newline="") as fh:
+        rd = _csv.DictReader(fh)
+        # Normaliza encabezados a las claves esperadas (tolerante a mayúsculas).
+        campo = {k: None for k in REG_COLNAMES}
+        for col in (rd.fieldnames or []):
+            low = str(col).strip().lower()
+            for k, name in REG_COLNAMES.items():
+                if low == name:
+                    campo[k] = col
+        for row in rd:
+            cod = _norm_cod(row.get(campo["cod"])) if campo["cod"] else ""
+            nombre_base = _clean(row.get(campo["enc"])) if campo["enc"] else ""
             # Identidad de la persona: nombre de la base; si falta, el código.
             persona = _norm_name_key(nombre_base) or (f"COD{cod}" if cod else "")
             if not persona:
                 continue
-            rv = row[idx["res"]] if idx["res"] is not None else None
-            res = RES_MAP.get(str(rv).strip().zfill(2) if rv is not None else "", None)
-            fi = _fecha_iso(row[idx["fi"]]) if idx["fi"] is not None else None
-            ff = _fecha_iso(row[idx["ff"]]) if idx["ff"] is not None else None
+            grupo = _clean(row.get(campo["grupo"])) if campo["grupo"] else ""
+            rv = row.get(campo["res"]) if campo["res"] else None
+            res = RES_MAP.get(str(rv).strip().zfill(2) if rv not in (None, "") else "", None)
+            fi = _fecha_iso(row.get(campo["fi"])) if campo["fi"] else None
+            ff = _fecha_iso(row.get(campo["ff"])) if campo["ff"] else None
             if res is None and fi is None and ff is None:
                 continue
             registros.append([persona, grupo, res, fi, ff])
@@ -418,8 +414,6 @@ def build_registro() -> None:
                     ddjj_por_persona[persona][d] += 1
             if nombre_base:
                 nombres_por_persona[persona][nombre_base] += 1
-
-    wb.close()
 
     # --- Construir el mapa de encuestadoras (1 fila = 1 persona) ---
     #   cod    : código primario para mostrar y ordenar (el más frecuente)
@@ -456,7 +450,7 @@ def build_registro() -> None:
     data = {
         "meta": {
             "generado": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "fuente": EXCEL_REG.name,
+            "fuente": "Bases crudas (Adolescentes y Mujeres)",
             "n_registros": len(registros),
             "fecha_min": min(fechas) if fechas else None,
             "fecha_max": max(fechas) if fechas else None,
