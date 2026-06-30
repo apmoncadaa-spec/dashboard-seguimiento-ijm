@@ -93,6 +93,7 @@
         <option value="Ambos">Ambos</option><option value="Adolescentes">Adolescentes</option><option value="Mujeres">Mujeres</option>
       </select></div>
       <div class="filter"><label>Resultado</label><select id="fRes"></select></div>
+      <div class="filter"><label>Distrito Judicial</label><select id="fDdjj"></select></div>
       <div class="filter"><label>Base de fecha</label><select id="fBase">
         <option value="inicio">Fecha de inicio</option><option value="fin">Fecha de fin</option>
       </select></div>
@@ -130,15 +131,25 @@ const RES_ORDEN = ['Completa', 'Cita - Aplazada', 'Ausente', 'Discapacitada',
 
 const selGrupo = document.getElementById('fGrupo');
 const selRes = document.getElementById('fRes');
+const selDdjj = document.getElementById('fDdjj');
 const selBase = document.getElementById('fBase');
 
 /* ================= Filtros ================= */
-function llenarRes() {
+function llenarFiltros() {
+  // Resultado
   selRes.add(new Option('Todos', 'Todos'));
   const presentes = new Set(DATA_REG.registros.map(r => r[F.res]).filter(Boolean));
   RES_ORDEN.filter(c => presentes.has(c)).forEach(c => selRes.add(new Option(c, c)));
   selRes.value = 'Completa';   // por defecto, como el Excel
-  [selGrupo, selRes, selBase].forEach(s => s.addEventListener('change', render));
+
+  // Distrito Judicial (de las encuestadoras), orden alfabético y 'Todos' por defecto
+  selDdjj.add(new Option('Todos', 'Todos'));
+  const ddjjs = [...new Set(Object.values(DATA_REG.encuestadoras)
+    .map(e => e.ddjj).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  ddjjs.forEach(d => selDdjj.add(new Option(d, d)));
+  selDdjj.value = 'Todos';
+
+  [selGrupo, selRes, selDdjj, selBase].forEach(s => s.addEventListener('change', render));
 }
 
 function filtrar() {
@@ -169,9 +180,12 @@ function render() {
   const base = selBase.value === 'fin' ? F.ff : F.fi;
   const regs = filtrar();
 
-  // Encuestadoras a mostrar (las del mapa), ordenadas por su código primario
-  const encs = Object.keys(DATA_REG.encuestadoras).sort((a, b) =>
-    codNum(DATA_REG.encuestadoras[a].cod) - codNum(DATA_REG.encuestadoras[b].cod));
+  // Encuestadoras a mostrar (las del mapa), filtradas por Distrito Judicial y
+  // ordenadas por su código primario
+  const ddjjSel = selDdjj.value;
+  const encs = Object.keys(DATA_REG.encuestadoras)
+    .filter(k => ddjjSel === 'Todos' || DATA_REG.encuestadoras[k].ddjj === ddjjSel)
+    .sort((a, b) => codNum(DATA_REG.encuestadoras[a].cod) - codNum(DATA_REG.encuestadoras[b].cod));
   const encSet = new Set(encs);
 
   // Matriz: conteo[cod][fecha]
@@ -247,7 +261,7 @@ function render() {
 
 document.getElementById('updated').textContent =
   `Datos actualizados: ${DATA_REG.meta.generado} — ${DATA_REG.meta.fuente}`;
-llenarRes();
+llenarFiltros();
 render();
 </script>
 </body>
