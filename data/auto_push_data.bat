@@ -8,6 +8,7 @@
 
 set REPO_DIR=C:\Users\FTQ\apoyoconsultoria.com\File Server - 2025-070-O IJM - Linea de base\04. Analisis\03. Programacion\06. Dashboard Seguimiento Web
 set GIT="C:\Program Files\Git\cmd\git.exe"
+set PYTHON=C:\Users\FTQ\AppData\Local\anaconda3\python.exe
 
 cd /d "%REPO_DIR%"
 if errorlevel 1 (
@@ -17,26 +18,32 @@ if errorlevel 1 (
 
 echo [%date% %time%] Iniciando subida de datos...
 
-:: 1) Traer PRIMERO los cambios del repositorio (codigo del dashboard, etc.)
-::    Asi esta copia local se mantiene al dia y no se pisa el trabajo de otros.
-%GIT% pull --rebase origin main
+:: 1) Traer cambios remotos. --autostash guarda y restaura automaticamente
+::    los cambios locales (Excels, etc.) sin perderlos.
+%GIT% pull --rebase --autostash origin main
 if errorlevel 1 (
-    echo ERROR: No se pudo actualizar desde GitHub ^(git pull --rebase^).
-    echo        Resuelve el conflicto manualmente y vuelve a ejecutar.
+    echo ERROR: No se pudo actualizar desde GitHub.
     exit /b 1
 )
 
-:: 2) Subir SOLO los cambios de la carpeta data\  (sin --force)
-%GIT% add data\
+:: 2) Regenerar archivos JS del dashboard a partir de los Excels actualizados
+"%PYTHON%" scripts\build_data.py
+if errorlevel 1 (
+    echo ERROR: Fallo build_data.py.
+    exit /b 1
+)
+
+:: 3) Subir Excels y JS generados (sin --force)
+%GIT% add data\ web\
 %GIT% diff --cached --quiet
 if errorlevel 1 (
     %GIT% commit -m "Actualizacion automatica %date% %time%"
     %GIT% push origin main
     if errorlevel 1 (
-        echo ERROR: Fallo el push. Revisa la conexion o vuelve a ejecutar.
+        echo ERROR: Fallo el push.
         exit /b 1
     )
-    echo OK: Archivos de datos subidos a GitHub.
+    echo OK: Datos y dashboard subidos a GitHub.
 ) else (
     echo Sin cambios nuevos.
 )
