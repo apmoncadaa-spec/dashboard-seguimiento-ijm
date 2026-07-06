@@ -574,11 +574,17 @@ def build_sobrevivientes() -> None:
 
     registros = []
     for _, r in sob.iterrows():
-        distrito_raw = _clean(r.get("Distrito Judicial"))
-        estado_raw = _clean(r.get("Respuesta del actor"))
-        contacto = _clean(r.get("Contacto"))
-        contactada = _clean(r.get("Contactada"))
-        if not (distrito_raw or estado_raw or contacto or contactada):
+        # Los encabezados de fila 1 son los originales; el contenido de las columnas
+        # fue reorganizado. Mapeo observado:
+        #   pandas "Contacto"               -> valor "Distrito Judicial: Callao"
+        #   pandas "Fecha de primer contacto" -> estado: "En coordinación" / "Realizada completa"
+        #   pandas "Respuesta del actor"    -> ¿Contactada? "Sí"/"No"
+        #   pandas "Distrito Judicial"      -> nombre de orientadora
+        distrito_raw = _clean(r.get("Contacto"))
+        estado_raw   = _clean(r.get("Fecha de primer contacto"))
+        contactada   = _clean(r.get("Respuesta del actor"))   # "Sí" / "No"
+        orientadora  = _clean(r.get("Distrito Judicial"))     # nombre orientadora
+        if not (distrito_raw or estado_raw or contactada):
             continue  # fila de relleno (vacía)
         # "Distrito Judicial: Huánuco" -> "Huánuco"; "Nacional" -> "Nacional"
         distrito = distrito_raw.split(":", 1)[1].strip() if ":" in distrito_raw else (distrito_raw or None)
@@ -593,7 +599,7 @@ def build_sobrevivientes() -> None:
         except (ValueError, TypeError):
             dur = None
         fecha = _fecha_iso(r.get("Fecha de inicio de entrevista"))
-        registros.append([distrito, contacto or None, estado, realizada, resultado, modalidad, dur, fecha])
+        registros.append([distrito, orientadora or None, estado, realizada, resultado, modalidad, dur, fecha])
 
     data = {
         "meta": {
