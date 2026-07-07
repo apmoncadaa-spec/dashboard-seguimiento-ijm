@@ -72,10 +72,28 @@ def _ddjj_norm(distrito):
         "APURÍMAC": "Apurímac", "APURIMAC": "Apurímac",
         "CAJAMARCA": "Cajamarca", "LORETO": "Loreto", "AYACUCHO": "Ayacucho",
         "HUÁNUCO": "Huánuco", "HUANUCO": "Huánuco",
-        "PUENTE PIEDRA - VENTANILLA": "Puente Piedra-Ventanilla",
-        "PUENTE PIEDRA-VENTANILLA": "Puente Piedra-Ventanilla",
+        "PUENTE PIEDRA - VENTANILLA": "Puente Piedra - Ventanilla",
+        "PUENTE PIEDRA-VENTANILLA": "Puente Piedra - Ventanilla",
+        "MUESTRA NACIONAL": "Muestra nacional",
     }
     return mapa.get(key, key.title())
+
+
+# En la hoja "Cuotas" el dominio 9 del correlativo figura como "Resto del Perú";
+# en la base (y en BD Personal) esa DDJJ se llama "Muestra nacional". Se
+# normaliza aquí para que el cruce base<->cuotas funcione sin editar el Excel.
+CUOTA_DDJJ_MAP = {
+    "Resto del Perú": "Muestra nacional",
+    "Resto del Peru": "Muestra nacional",
+    # Grafía unificada CON espacios alrededor del guion (2026-07-06)
+    "Puente Piedra-Ventanilla": "Puente Piedra - Ventanilla",
+}
+
+
+def _cuota_ddjj(nombre):
+    """Normaliza el nombre de DDJJ de la hoja Cuotas a la grafía de la base."""
+    s = str(nombre).strip()
+    return CUOTA_DDJJ_MAP.get(s, s)
 
 
 def _leer_bdpersonal():
@@ -574,24 +592,25 @@ def build_sobrevivientes() -> None:
 
     registros = []
     for _, r in sob.iterrows():
-        # Los encabezados de fila 1 son los originales; el contenido de las columnas
-        # fue reorganizado. Mapeo observado:
-        #   pandas "Contacto"               -> valor "Distrito Judicial: Callao"
-        #   pandas "Fecha de primer contacto" -> estado: "En coordinación" / "Realizada completa"
-        #   pandas "Respuesta del actor"    -> ¿Contactada? "Sí"/"No"
-        #   pandas "Distrito Judicial"      -> nombre de orientadora
-        distrito_raw = _clean(r.get("Contacto"))
+        # Layout tras la reorganización de la hoja (07/2026). Mapeo por CONTENIDO:
+        #   "Distrito Judicial"        -> "Distrito Judicial: Callao"  (distrito, con prefijo)
+        #   "Tipo de entrevista"       -> "Sobreviviente" / "Líder sobreviviente"
+        #   "Fecha de primer contacto" -> estado: "En coordinación" / "Realizada completa"
+        #   "Contacto"                 -> nombre de la persona de contacto
+        #   "Resultado"                -> modalidad ("Presencial"/"Virtual")
+        # Nota: esta hoja NO trae Completa/Incompleta ni minutos de duración.
+        if pd.isna(r.get("Identificador")):
+            continue  # fila de relleno (sin identificador)
+        distrito_raw = _clean(r.get("Distrito Judicial"))
+        tipo_raw     = _clean(r.get("Tipo de entrevista"))
         estado_raw   = _clean(r.get("Fecha de primer contacto"))
-        contactada   = _clean(r.get("Respuesta del actor"))   # "Sí" / "No"
-        orientadora  = _clean(r.get("Distrito Judicial"))     # nombre orientadora
-        if not (distrito_raw or estado_raw or contactada):
-            continue  # fila de relleno (vacía)
-        # "Distrito Judicial: Huánuco" -> "Huánuco"; "Nacional" -> "Nacional"
+        contacto     = _clean(r.get("Contacto"))
         distrito = distrito_raw.split(":", 1)[1].strip() if ":" in distrito_raw else (distrito_raw or None)
+        tipo = tipo_raw or None
         estado = EST_NORM.get(estado_raw.lower(), estado_raw) if estado_raw else None
         realizada = 1 if estado == "Realizada completa" else 0
-        resultado = _clean(r.get("Resultado")) or None
-        modalidad = _clean(r.get("Modalidad")) or None
+        resultado = None  # la hoja actual no trae Completa/Incompleta
+        modalidad = _clean(r.get("Resultado")) or None  # "Resultado" trae Presencial/Virtual
         try:
             dur = float(r.get("Duración total (min)"))
             if pd.isna(dur):
@@ -599,14 +618,14 @@ def build_sobrevivientes() -> None:
         except (ValueError, TypeError):
             dur = None
         fecha = _fecha_iso(r.get("Fecha de inicio de entrevista"))
-        registros.append([distrito, orientadora or None, estado, realizada, resultado, modalidad, dur, fecha])
+        registros.append([distrito, contacto or None, estado, realizada, resultado, modalidad, dur, fecha, tipo])
 
     data = {
         "meta": {
             "generado": datetime.now().strftime("%d/%m/%Y %H:%M"),
             "fuente": EXCEL_CUALI.name + " (hoja Dashboard - Sobrevivientes)",
             "n_registros": len(registros),
-            "campos": ["distrito", "contacto", "estado", "realizada", "resultado", "modalidad", "duracion", "fecha"],
+            "campos": ["distrito", "contacto", "estado", "realizada", "resultado", "modalidad", "duracion", "fecha", "tipo"],
         },
         "registros": registros,
     }
@@ -616,6 +635,7 @@ def build_sobrevivientes() -> None:
     from collections import Counter
     print(f"OK -> {OUT_SOB.relative_to(ROOT)}")
     print(f"   registros: {len(registros)} | realizadas: {sum(r[3] for r in registros)} | "
+          f"por tipo: {dict(Counter(r[8] for r in registros))} | "
           f"distritos: {dict(Counter(r[0] for r in registros))}")
 
 
@@ -649,7 +669,7 @@ def main() -> None:
     # --- Cuotas ------------------------------------------------------------
     cuotas_out = [
         {
-            "ddjj": str(r["Distrito Judicial"]),
+            "ddjj": _cuota_ddjj(r["Distrito Judicial"]),
             "grupo": str(r["Grupo etario"]),
             "sexo": str(r["Sexo"]),
             "cuota": int(r["Cuota"]),
@@ -698,13 +718,13 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001
         print(f"AVISO: no se pudo generar data-registro.js ({type(e).__name__}: {e})")
 
-    # --- Pestaña Expedientes: Desempeño (no detiene la build) ---
+    # --- Pestaña Expedientes: Desempeño (no detiene la build si falla) ---
     try:
         build_expedientes()
     except Exception as e:  # noqa: BLE001
         print(f"AVISO: no se pudo generar data-expedientes.js ({type(e).__name__}: {e})")
 
-    # --- Pestaña Entrevistas a sobrevivientes (no detiene la build) ---
+    # --- Pestaña Entrevistas a sobrevivientes (no detiene la build si falla) ---
     try:
         build_sobrevivientes()
     except Exception as e:  # noqa: BLE001
