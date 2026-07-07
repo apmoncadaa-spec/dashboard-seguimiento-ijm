@@ -85,10 +85,13 @@
       <div class="kpi"><div class="v" id="kpiReal">—</div><div class="l">Entrevistas realizadas</div></div>
       <div class="kpi"><div class="v" id="kpiDur">—</div><div class="l">Duración promedio (mins)</div></div>
       <div class="kpi"><div class="v" id="kpiAvance">—</div><div class="l">% de avance (vs meta)</div></div>
+      <div class="kpi"><div class="v" id="kpiSob">—</div><div class="l">Sobrevivientes (realizadas)</div></div>
+      <div class="kpi"><div class="v" id="kpiLider">—</div><div class="l">Líderes sobrev. (realizadas)</div></div>
     </div>
     <div class="filters">
       <div class="filter"><label>Ámbito</label><select id="fAmbito"><option value="">Todas</option></select></div>
       <div class="filter"><label>Distrito Judicial</label><select id="fDistrito"><option value="">Todas</option></select></div>
+      <div class="filter"><label>Tipo</label><select id="fTipo"><option value="">Todos</option></select></div>
       <button id="btnLimpiar" class="btnclear" type="button" hidden>Limpiar filtros ✕</button>
     </div>
     <div class="activos" id="activos"></div>
@@ -140,7 +143,7 @@ Chart.defaults.font.family = FONT;
 Chart.register(ChartDataLabels);
 
 // Índices de campos (ver meta.campos de data-sobrevivientes.js)
-const F = { distrito: 0, contacto: 1, estado: 2, realizada: 3, resultado: 4, modalidad: 5, duracion: 6, fecha: 7 };
+const F = { distrito: 0, contacto: 1, estado: 2, realizada: 3, resultado: 4, modalidad: 5, duracion: 6, fecha: 7, tipo: 8 };
 
 // Meta FIJA (Tabla 9). 3 entrevistas por distrito; muestra nacional sin desagregar.
 const META = {
@@ -171,19 +174,25 @@ const EST_COLOR = {
 /* ================= Filtros (desplegables + clic en gráficos, estilo Power BI) ================= */
 const selAmbito = document.getElementById('fAmbito');
 const selDistrito = document.getElementById('fDistrito');
+const selTipo = document.getElementById('fTipo');
 
 // Estado de filtros unificado. Desplegables: ambito/distrito. Clic: ambito/distrito/estado/resultado.
-const filtros = { ambito: '', distrito: '', estado: '', resultado: '' };
-const ETIQUETA = { ambito: 'Ámbito', distrito: 'Distrito', estado: 'Estado', resultado: 'Resultado' };
+const filtros = { ambito: '', distrito: '', estado: '', resultado: '', tipo: '' };
+const ETIQUETA = { ambito: 'Ámbito', distrito: 'Distrito', estado: 'Estado', resultado: 'Resultado', tipo: 'Tipo' };
 
 function distritosData() {
   return [...new Set(DATA_SOB.registros.map(r => r[F.distrito]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
 }
+function tiposData() {
+  return [...new Set(DATA_SOB.registros.map(r => r[F.tipo]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+}
 function llenarFiltros() {
   META.ambitos.forEach(a => selAmbito.add(new Option(a.nombre, a.nombre)));
   distritosData().forEach(d => selDistrito.add(new Option(d, d)));
+  tiposData().forEach(t => selTipo.add(new Option(t, t)));
   selAmbito.addEventListener('change', () => { filtros.ambito = selAmbito.value; render(); });
   selDistrito.addEventListener('change', () => { filtros.distrito = selDistrito.value; render(); });
+  selTipo.addEventListener('change', () => { filtros.tipo = selTipo.value; render(); });
   document.getElementById('btnLimpiar').addEventListener('click', limpiarFiltros);
 }
 
@@ -193,7 +202,8 @@ function filtrar(except) {
     (except === 'ambito'    || !filtros.ambito    || ambitoDe(r[F.distrito]) === filtros.ambito) &&
     (except === 'distrito'  || !filtros.distrito  || r[F.distrito]  === filtros.distrito) &&
     (except === 'estado'    || !filtros.estado    || r[F.estado]    === filtros.estado) &&
-    (except === 'resultado' || !filtros.resultado || r[F.resultado] === filtros.resultado));
+    (except === 'resultado' || !filtros.resultado || r[F.resultado] === filtros.resultado) &&
+    (except === 'tipo'      || !filtros.tipo      || r[F.tipo]      === filtros.tipo));
 }
 function metaActual() {
   if (filtros.distrito) return META.porDistrito[filtros.distrito] || 0;
@@ -222,6 +232,7 @@ function manoHover(evt, els) {
 function sincronizarUI() {
   selAmbito.value = filtros.ambito;
   selDistrito.value = filtros.distrito;
+  selTipo.value = filtros.tipo;
   const act = Object.keys(filtros).filter(k => filtros[k]).map(k => `${ETIQUETA[k]}: ${filtros[k]}`);
   document.getElementById('activos').textContent = act.length
     ? 'Filtros activos — ' + act.join('   ·   ') + '   (clic de nuevo en la selección o "Limpiar" para quitar)'
@@ -384,6 +395,8 @@ function render() {
   document.getElementById('kpiDur').textContent =
     durs.length ? (durs.reduce((a, b) => a + b, 0) / durs.length).toFixed(1) : '—';
   document.getElementById('kpiAvance').textContent = pct(real.length, metaActual());
+  document.getElementById('kpiSob').textContent = fmt(real.filter(r => r[F.tipo] === 'Sobreviviente').length);
+  document.getElementById('kpiLider').textContent = fmt(real.filter(r => r[F.tipo] === 'Líder sobreviviente').length);
 
   renderEstado(filtrar('estado'));
   renderResultado(filtrar('resultado'));
