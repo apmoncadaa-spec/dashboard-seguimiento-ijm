@@ -91,6 +91,7 @@
     <div class="kpis">
       <div class="kpi"><div class="v" id="kpiRealizada">—</div><div class="l">Realizada</div></div>
       <div class="kpi"><div class="v" id="kpiDur">—</div><div class="l">Duración promedio (mins)</div></div>
+      <div class="kpi"><div class="v" id="kpiAvance">—</div><div class="l">% de avance (vs meta)</div></div>
     </div>
     <div class="filters">
       <div class="filter"><label>Distrito Judicial</label><select id="fDistrito"><option value="">Todas</option></select></div>
@@ -213,6 +214,15 @@ function filtrar(except) {
     (except === 'estado'    || !filtros.estado    || r[F.estado]    === filtros.estado));
 }
 
+// Denominador adaptativo del % de avance: si el ÚNICO filtro activo es un tipo de actor → su meta;
+// si el único es un ámbito → su meta; en cualquier otro caso (nada, combinaciones, o distrito/estado/modalidad) → total 100.
+function metaActual() {
+  const soloEste = dim => filtros[dim] && Object.keys(filtros).every(k => k === dim || !filtros[k]);
+  if (soloEste('actor'))  return META_ACTOR[filtros.actor] ?? 100;
+  if (soloEste('ambito')) return META_AMBITO[filtros.ambito] ?? 100;
+  return 100;
+}
+
 function toggleFiltro(dim, valor) {
   if (valor == null) return;
   filtros[dim] = (filtros[dim] === valor) ? '' : valor;  // clic en la misma categoría = quitar
@@ -246,6 +256,7 @@ function sincronizarUI() {
 /* ================= Utilidades ================= */
 const fmt = n => n.toLocaleString('es-PE');
 const pct = (n, d) => d > 0 ? Math.round(n / d * 100) + '%' : '0%';
+const pctAvance = (n, d) => d > 0 ? parseFloat((n / d * 100).toFixed(1)) + '%' : '—';
 function cuenta(regs, campo, valor) { return regs.filter(r => r[campo] === valor).length; }
 function hexRgba(hex, a) {
   const h = hex.replace('#', ''); const n = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
@@ -422,6 +433,7 @@ function render() {
   const durs = real.map(r => r[F.dur]).filter(v => v != null);
   document.getElementById('kpiDur').textContent =
     durs.length ? (durs.reduce((a, b) => a + b, 0) / durs.length).toFixed(1) : '—';
+  document.getElementById('kpiAvance').textContent = pctAvance(real.length, metaActual());
 
   // Cada gráfico se auto-excluye de su propia dimensión (estilo Power BI: muestra todas sus categorías y resalta la elegida)
   renderDonut(filtrar('estado'));
