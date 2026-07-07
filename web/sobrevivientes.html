@@ -299,8 +299,8 @@ function renderResultado(regs) {
   const m = conteo(real, F.modalidad);   // 'Resultado' de la hoja trae la modalidad (Presencial/Virtual)
   const cats = Object.keys(m).sort((a, b) => m[b] - m[a] || a.localeCompare(b, 'es'));
   const vals = cats.map(c => m[c]);
-  const PAL = { 'Presencial': '#CD4F4F', 'Virtual': '#216686' };
-  const baseCols = cats.map((c, i) => PAL[c] || ['#A6A6A6', '#6E6E6E', '#DC7528'][i % 3]);
+  const PAL = { 'Presencial': '#CD4F4F', 'Virtual': '#A6A6A6' };
+  const baseCols = cats.map((c, i) => PAL[c] || ['#6E6E6E', '#DC7528', '#1D7D54'][i % 3]);
   if (chResultado) chResultado.destroy();
   chResultado = pintarDonut('donutResultado', 'legResultado', cats, vals, baseCols, 'modalidad');
 }
