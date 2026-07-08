@@ -311,12 +311,10 @@ function renderAvance(regs) {
   const labels = ambitos.map(a => a.nombre);
   const realiz = ambitos.map(a => regs.filter(r => r[F.realizada] === 1 && ambitoDe(r[F.distrito]) === a.nombre).length);
   const coord = ambitos.map(a => regs.filter(r => r[F.estado] === 'En coordinación' && ambitoDe(r[F.distrito]) === a.nombre).length);
-  const meta = ambitos.map(a => {
-    // Al filtrar por un distrito judicial, la meta del ámbito que lo contiene baja a la del distrito (3),
-    // no la del ámbito completo (12); los demás ámbitos quedan en 0 (no aplican al distrito filtrado).
-    if (filtros.distrito) return ambitoDe(filtros.distrito) === a.nombre ? (META.porDistrito[filtros.distrito] || 3) : 0;
-    return a.meta;
-  });
+  // Al filtrar por un distrito judicial, la meta es la del distrito (3) y se dibuja como línea RECTA
+  // (plana) a lo largo del gráfico; sin filtro de distrito, cada ámbito lleva su meta total (12).
+  const metaDist = filtros.distrito ? (META.porDistrito[filtros.distrito] || 3) : null;
+  const meta = ambitos.map(a => metaDist != null ? metaDist : a.meta);
   const maxY = Math.max(...meta, ...realiz, ...coord) + 1;
   const colReal = ambitos.map(a => colHL('#CD4F4F', 'ambito', a.nombre));
   const colCoord = ambitos.map(a => colHL('#A6A6A6', 'ambito', a.nombre));
