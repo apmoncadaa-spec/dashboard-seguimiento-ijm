@@ -206,7 +206,7 @@ function filtrar(except) {
     (except === 'tipo'      || !filtros.tipo      || r[F.tipo]      === filtros.tipo));
 }
 function metaActual() {
-  if (filtros.distrito) return META.porDistrito[filtros.distrito] || 0;
+  if (filtros.distrito) return META.porDistrito[filtros.distrito] || 3;
   if (filtros.ambito) { const a = META.ambitos.find(x => x.nombre === filtros.ambito); return a ? a.meta : 0; }
   return META.total;
 }
@@ -311,7 +311,12 @@ function renderAvance(regs) {
   const labels = ambitos.map(a => a.nombre);
   const realiz = ambitos.map(a => regs.filter(r => r[F.realizada] === 1 && ambitoDe(r[F.distrito]) === a.nombre).length);
   const coord = ambitos.map(a => regs.filter(r => r[F.estado] === 'En coordinación' && ambitoDe(r[F.distrito]) === a.nombre).length);
-  const meta = ambitos.map(a => a.meta);
+  const meta = ambitos.map(a => {
+    // Al filtrar por un distrito judicial, la meta del ámbito que lo contiene baja a la del distrito (3),
+    // no la del ámbito completo (12); los demás ámbitos quedan en 0 (no aplican al distrito filtrado).
+    if (filtros.distrito) return ambitoDe(filtros.distrito) === a.nombre ? (META.porDistrito[filtros.distrito] || 3) : 0;
+    return a.meta;
+  });
   const maxY = Math.max(...meta, ...realiz, ...coord) + 1;
   const colReal = ambitos.map(a => colHL('#CD4F4F', 'ambito', a.nombre));
   const colCoord = ambitos.map(a => colHL('#A6A6A6', 'ambito', a.nombre));
