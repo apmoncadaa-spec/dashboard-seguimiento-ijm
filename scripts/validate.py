@@ -121,9 +121,23 @@ def main() -> int:
 
     # Distritos de la base presentes en cuotas
     if not errors:
+        # En la hoja Cuotas el dominio 9 figura como "Resto del Perú"; en la
+        # base esa DDJJ es "Muestra nacional" (mismo mapeo que build_data.py).
+        cuota_map = {
+            "Resto del Perú": "Muestra nacional",
+            "Resto del Peru": "Muestra nacional",
+            # Grafía unificada CON espacios alrededor del guion (2026-07-06)
+            "Puente Piedra-Ventanilla": "Puente Piedra - Ventanilla",
+        }
         ddjj_base = set(base["DDJJ"].dropna().astype(str).unique())
-        ddjj_cuotas = set(cuotas["Distrito Judicial"].dropna().astype(str).unique())
-        sin_cuota = ddjj_base - ddjj_cuotas
+        ddjj_cuotas = {cuota_map.get(d, d) for d in cuotas["Distrito Judicial"].dropna().astype(str).unique()}
+        # "Sin asignar" NO es un DDJJ: es el marcador de filas sin asignación.
+        # Se excluye del chequeo y solo se reporta como advertencia.
+        placeholder = {"Sin asignar"}
+        n_sin_asig = int((base["DDJJ"].astype(str) == "Sin asignar").sum())
+        if n_sin_asig > 0:
+            warn(f"Hoja 'Base (0)': {n_sin_asig} fila(s) con DDJJ 'Sin asignar' (sin asignación).")
+        sin_cuota = ddjj_base - ddjj_cuotas - placeholder
         if sin_cuota:
             err(f"Distritos judiciales con encuestas pero SIN cuota definida: {sorted(sin_cuota)}.")
 
