@@ -9,6 +9,7 @@ Uso:
     python scripts/validate.py && python scripts/build_data.py
 """
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -134,20 +135,41 @@ REG_COLNAMES = {
 
 
 def _norm_cod(x):
-    """Normaliza un código de persona a 2 dígitos extrayendo sus dígitos.
+    """Normaliza un código de persona. Soporta códigos ALFANUMÉRICOS (A0, A1).
 
-    Maneja casos como 8 -> '08', '02' -> '02' y 'E44' -> '44' (código con
-    prefijo de rol mal digitado en la base).
+    Numéricos: 8 -> '08', '02' -> '02'. Alfanuméricos (desde jul-2026 hay
+    encuestadoras con letra en el código): 'a1' -> 'A1', 'A01' -> 'A1'. La
+    letra se CONSERVA porque es parte del código (antes se extraían solo los
+    dígitos y 'A1' colisionaba con el código 01). Un prefijo de rol mal
+    digitado tipo 'E44' se resuelve en _bd_lookup con respaldo por dígitos.
     """
     if x is None:
         return ""
-    s = str(x).strip()
+    s = str(x).strip().upper()
     if s in ("", "."):
         return ""
+    if re.fullmatch(r"\d+", s):
+        return f"{int(s):02d}"
+    m = re.fullmatch(r"([A-ZÑ])0*(\d+)", s)
+    if m:
+        return m.group(1) + m.group(2)
     digitos = "".join(ch for ch in s if ch.isdigit())
     if not digitos:
         return ""
     return f"{int(digitos):02d}"
+
+
+def _bd_lookup(bd, cod):
+    """Busca un código en BD Personal; si es alfanumérico y no está, prueba
+    con solo los dígitos (caso legado 'E44' = rol mal digitado + código 44)."""
+    if not cod:
+        return {}
+    if cod in bd:
+        return bd[cod]
+    dig = "".join(ch for ch in cod if ch.isdigit())
+    if dig and dig != cod:
+        return bd.get(f"{int(dig):02d}", {})
+    return {}
 
 
 def _norm_name_key(s):
@@ -427,7 +449,7 @@ def build_registro() -> None:
             registros.append([persona, grupo, res, fi, ff])
             if cod:
                 codes_por_persona[persona][cod] += 1
-                d = bd.get(cod, {}).get("ddjj", "")
+                d = _bd_lookup(bd, cod).get("ddjj", "")
                 if d:
                     ddjj_por_persona[persona][d] += 1
             if nombre_base:
@@ -441,7 +463,7 @@ def build_registro() -> None:
     sin_ddjj = []
     for persona in {r[0] for r in registros}:
         cc = codes_por_persona[persona]
-        modal_cod = min(cc, key=lambda c: (-cc[c], int(c))) if cc else ""
+        modal_cod = min(cc, key=lambda c: (-cc[c], (0, int(c), "") if c.isdigit() else (1, 0, c))) if cc else ""
 
         dc = ddjj_por_persona[persona]
         if dc:
@@ -452,7 +474,7 @@ def build_registro() -> None:
             ddjj = "(sin asignar)"
             sin_ddjj.append((persona, modal_cod))
 
-        nombre = bd.get(modal_cod, {}).get("nombre", "") if modal_cod else ""
+        nombre = _bd_lookup(bd, modal_cod).get("nombre", "") if modal_cod else ""
         if not nombre:
             nb = nombres_por_persona[persona].most_common(1)
             nombre = nb[0][0] if nb else persona

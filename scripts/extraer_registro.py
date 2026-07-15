@@ -78,7 +78,7 @@ def _ubicar_bases():
 # encuestadora cae en otra columna y el dashboard atribuye la encuesta a la
 # persona equivocada (p. ej. la supervisora con código 01).
 _RE_FECHA = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
-_RE_COD = re.compile(r"^\d{1,3}$")
+_RE_COD = re.compile(r"^[A-Za-zÑñ]?\d{1,3}$")  # acepta alfanuméricos (A0, A1, ...)
 
 
 def _tiene_letras(s):
