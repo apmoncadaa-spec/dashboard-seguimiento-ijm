@@ -620,7 +620,7 @@ def build_expedientes() -> None:
 
 
 def build_sobrevivientes() -> None:
-    """Genera web/data-sobrevivientes.js desde la hoja 'Dashboard - Sobrevivientes'.
+    """Genera web/data-sobrevivientes.js desde la hoja CRUDA 'Sobrevivientes' (columnas estables).
 
     Una fila por sobreviviente identificada/contactada. El navegador aplica los
     filtros (Ámbito / Distrito judicial) y recalcula: realizadas, duración
@@ -631,46 +631,40 @@ def build_sobrevivientes() -> None:
         print(f"AVISO: no se encontró {EXCEL_CUALI.name}; se omite data-sobrevivientes.js")
         return
     try:
-        sob = pd.read_excel(EXCEL_CUALI, sheet_name="Dashboard - Sobrevivientes")
+        sob = pd.read_excel(EXCEL_CUALI, sheet_name="Sobrevivientes")
     except Exception as e:  # noqa: BLE001  (la hoja puede no existir todavía)
-        print(f"AVISO: no se pudo leer 'Dashboard - Sobrevivientes' ({type(e).__name__}); se omite.")
+        print(f"AVISO: no se pudo leer 'Sobrevivientes' ({type(e).__name__}); se omite.")
         return
     sob.columns = [str(c).strip() for c in sob.columns]
 
     registros = []
     for _, r in sob.iterrows():
-        # Layout tras la reorganización de la hoja (07/2026). Mapeo por CONTENIDO:
-        #   "Distrito Judicial"        -> "Distrito Judicial: Callao"  (distrito, con prefijo)
-        #   "Tipo de entrevista"       -> "Sobreviviente" / "Líder sobreviviente"
-        #   "Fecha de primer contacto" -> estado: "En coordinación" / "Realizada completa"
-        #   "Contacto"                 -> nombre de la persona de contacto
-        #   "Resultado"                -> modalidad ("Presencial"/"Virtual")
-        # Nota: esta hoja NO trae Completa/Incompleta ni minutos de duración.
-        if pd.isna(r.get("Identificador")):
-            continue  # fila de relleno (sin identificador)
+        # Se lee la hoja CRUDA 'Sobrevivientes' (columnas estables y bien nombradas), NO la vista
+        # con fórmulas 'Dashboard - Sobrevivientes' (que se desalinea cada vez que se edita el Excel).
+        if pd.isna(r.get("#")):
+            continue  # fila sin número = relleno
         distrito_raw = _clean(r.get("Distrito Judicial"))
-        tipo_raw     = _clean(r.get("Tipo de entrevista"))
-        estado_raw   = _clean(r.get("Fecha de primer contacto"))
-        contacto     = _clean(r.get("Contacto"))
+        tipo         = _clean(r.get("Tipo de sobreviviente")) or None
+        estado_raw   = _clean(r.get("Respuesta"))
+        contacto     = _clean(r.get("Nombre orientadora judicial")) or None
         distrito = distrito_raw.split(":", 1)[1].strip() if ":" in distrito_raw else (distrito_raw or None)
-        tipo = tipo_raw or None
         estado = EST_NORM.get(estado_raw.lower(), estado_raw) if estado_raw else None
         realizada = 1 if estado == "Realizada completa" else 0
-        resultado = None  # la hoja actual no trae Completa/Incompleta
-        modalidad = _clean(r.get("Resultado")) or None  # "Resultado" trae Presencial/Virtual
+        resultado = None  # la hoja no trae Completa/Incompleta
+        modalidad = _clean(r.get("Modalidad")) or None
         try:
             dur = float(r.get("Duración total (min)"))
             if pd.isna(dur):
                 dur = None
         except (ValueError, TypeError):
             dur = None
-        fecha = _fecha_iso(r.get("Fecha de inicio de entrevista"))
-        registros.append([distrito, contacto or None, estado, realizada, resultado, modalidad, dur, fecha, tipo])
+        fecha = _fecha_iso(r.get("Fecha de inicio de actividad"))
+        registros.append([distrito, contacto, estado, realizada, resultado, modalidad, dur, fecha, tipo])
 
     data = {
         "meta": {
             "generado": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "fuente": EXCEL_CUALI.name + " (hoja Dashboard - Sobrevivientes)",
+            "fuente": EXCEL_CUALI.name + " (hoja Sobrevivientes)",
             "n_registros": len(registros),
             "campos": ["distrito", "contacto", "estado", "realizada", "resultado", "modalidad", "duracion", "fecha", "tipo"],
         },
