@@ -186,6 +186,29 @@ def _norm_name_key(s):
     s = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in s)
     return " ".join(s.upper().split())
 
+
+# Partículas que van en minúscula dentro de un nombre propio (2026-07-15)
+_PARTICULAS_NOMBRE = {"DE", "DEL", "DA", "DAS", "DI", "DO", "DOS", "LA", "LAS",
+                      "LO", "LOS", "Y", "E", "VAN", "VON", "MC"}
+
+
+def _nombre_bonito(s):
+    """Convierte un nombre a formato tipo título para MOSTRAR en el dashboard:
+    'KARIN AYAPI DA SILVA' -> 'Karin Ayapi da Silva'. Solo afecta la
+    presentación; el agrupamiento interno de personas sigue usando
+    _norm_name_key (MAYÚSCULAS), así que no cambia ningún cruce ni conteo.
+    Respeta tildes/Ñ y deja las partículas (de, del, da, y...) en minúscula,
+    salvo cuando son la primera palabra."""
+    palabras = str(s).split()
+    out = []
+    for i, p in enumerate(palabras):
+        if i > 0 and p.upper() in _PARTICULAS_NOMBRE:
+            out.append(p.lower())
+        else:
+            # capitaliza también tras guion: ANA-MARIA -> Ana-Maria
+            out.append("-".join(t[:1].upper() + t[1:].lower() for t in p.split("-")))
+    return " ".join(out)
+
 # Rol crudo -> etiqueta corta usada como "Tipo de actor" en el dashboard
 ROL_MAP = {
     "Acompañante de víctimas": "Acompañantes",
@@ -480,7 +503,9 @@ def build_registro() -> None:
             nombre = nb[0][0] if nb else persona
             nombre = " ".join(nombre.replace("\ufffd", "").split())  # limpia mojibake
 
-        encuestadoras[persona] = {"cod": modal_cod or "—", "nombre": nombre, "ddjj": ddjj}
+        encuestadoras[persona] = {"cod": modal_cod or "—",
+                                  "nombre": _nombre_bonito(nombre),  # solo presentación
+                                  "ddjj": ddjj}
 
     if sin_ddjj:
         _lst = ["{} (cód. {})".format(n, c or "?") for n, c in sorted(sin_ddjj)]
