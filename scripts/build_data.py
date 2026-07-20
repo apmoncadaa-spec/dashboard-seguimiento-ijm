@@ -294,7 +294,11 @@ def build_confianza() -> None:
 
     registros = []
     for _, r in ent.iterrows():
-        estado_raw = _clean(r.get("Respuesta del actor"))
+        # Se basa el estado en "Resultado" (que los encuestadores sí llenan) con respaldo en
+        # "Respuesta del actor". Antes solo se usaba "Respuesta del actor", que depende de que
+        # "Contacto/Contactado" esté lleno; si lo olvidaban, la entrevista no se contaba aunque
+        # "Resultado = Realizada completa".
+        estado_raw = _clean(r.get("Resultado")) or _clean(r.get("Respuesta del actor"))
         if not estado_raw:
             continue  # sin estado de coordinación aún -> fuera de la dona
         estado = EST_NORM.get(estado_raw.lower(), estado_raw)
