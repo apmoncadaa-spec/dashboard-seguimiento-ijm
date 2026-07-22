@@ -172,6 +172,22 @@ def _bd_lookup(bd, cod):
     return {}
 
 
+# --- Cambios de asignación de DDJJ con fecha de vigencia (2026-07-21) --------
+# Cuando una encuestadora cambia de DDJJ a mitad de campaña, BD Personal solo
+# guarda la asignación VIGENTE (la nueva). Esta tabla registra el historial
+# para que en la pestaña Registro su fila muestre ambas DDJJ ("anterior /
+# nueva") y el filtro por DDJJ respete las fechas de cada tramo. Para un nuevo
+# cambio, agregar aquí el código con sus tramos. MANTENER SINCRONIZADO con la
+# sección "CAMBIOS DE ASIGNACION" de 02. Encuestas/01. Sincronizacion.do.
+# Formato: código -> [(ddjj, desde_ISO, hasta_ISO)], None = sin límite.
+CAMBIOS_DDJJ = {
+    "98": [  # Zara Cecilia Mori Quispe
+        ("Muestra nacional", None, "2026-07-20"),
+        ("Puente Piedra - Ventanilla", "2026-07-21", None),
+    ],
+}
+
+
 def _norm_name_key(s):
     """Clave canónica de un nombre para agrupar a la misma persona.
 
@@ -507,9 +523,20 @@ def build_registro() -> None:
             nombre = nb[0][0] if nb else persona
             nombre = " ".join(nombre.replace("\ufffd", "").split())  # limpia mojibake
 
-        encuestadoras[persona] = {"cod": modal_cod or "—",
-                                  "nombre": _nombre_bonito(nombre),  # solo presentación
-                                  "ddjj": ddjj}
+        entrada = {"cod": modal_cod or "—",
+                   "nombre": _nombre_bonito(nombre),  # solo presentación
+                   "ddjj": ddjj}
+
+        # --- Cambio de DDJJ con vigencia: etiqueta combinada + tramos con
+        #     fechas para que el filtro del dashboard los respete. ---
+        if modal_cod in CAMBIOS_DDJJ:
+            tramos = CAMBIOS_DDJJ[modal_cod]
+            entrada["ddjj"] = " / ".join(t[0] for t in tramos)
+            entrada["asig"] = [
+                {"ddjj": t[0], "desde": t[1], "hasta": t[2]} for t in tramos
+            ]
+
+        encuestadoras[persona] = entrada
 
     if sin_ddjj:
         _lst = ["{} (cód. {})".format(n, c or "?") for n, c in sorted(sin_ddjj)]

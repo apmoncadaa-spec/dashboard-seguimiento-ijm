@@ -142,10 +142,13 @@ function llenarFiltros() {
   RES_ORDEN.filter(c => presentes.has(c)).forEach(c => selRes.add(new Option(c, c)));
   selRes.value = 'Completa';   // por defecto, como el Excel
 
-  // Distrito Judicial (de las encuestadoras), orden alfabético y 'Todos' por defecto
+  // Distrito Judicial (de las encuestadoras), orden alfabético y 'Todos' por defecto.
+  // Si una encuestadora cambió de DDJJ (tiene 'asig'), sus DDJJ entran por
+  // separado al filtro (la etiqueta combinada "A / B" no es una opción).
   selDdjj.add(new Option('Todos', 'Todos'));
   const ddjjs = [...new Set(Object.values(DATA_REG.encuestadoras)
-    .map(e => e.ddjj).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    .flatMap(e => e.asig ? e.asig.map(a => a.ddjj) : [e.ddjj])
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
   ddjjs.forEach(d => selDdjj.add(new Option(d, d)));
   selDdjj.value = 'Todos';
 
@@ -183,10 +186,21 @@ function render() {
   // Encuestadoras a mostrar (las del mapa), filtradas por Distrito Judicial y
   // ordenadas por su código primario
   const ddjjSel = selDdjj.value;
+  const matchDdjj = e => ddjjSel === 'Todos' ||
+    (e.asig ? e.asig.some(a => a.ddjj === ddjjSel) : e.ddjj === ddjjSel);
   const encs = Object.keys(DATA_REG.encuestadoras)
-    .filter(k => ddjjSel === 'Todos' || DATA_REG.encuestadoras[k].ddjj === ddjjSel)
+    .filter(k => matchDdjj(DATA_REG.encuestadoras[k]))
     .sort((a, b) => codNum(DATA_REG.encuestadoras[a].cod) - codNum(DATA_REG.encuestadoras[b].cod));
   const encSet = new Set(encs);
+
+  // Si la encuestadora cambió de DDJJ, al filtrar por una DDJJ concreta solo
+  // cuentan sus encuestas dentro del tramo de vigencia de esa DDJJ (las
+  // fechas ISO se comparan como texto).
+  const enTramo = (info, f) => {
+    if (ddjjSel === 'Todos' || !info.asig) return true;
+    const a = info.asig.find(t => t.ddjj === ddjjSel);
+    return !!a && (!a.desde || f >= a.desde) && (!a.hasta || f <= a.hasta);
+  };
 
   // Matriz: conteo[cod][fecha]
   const conteo = {}; const fechasSet = new Set();
@@ -194,6 +208,7 @@ function render() {
   regs.forEach(r => {
     const c = r[F.cod], f = r[base];
     if (!f || !encSet.has(c)) return;
+    if (!enTramo(DATA_REG.encuestadoras[c], f)) return;
     conteo[c][f] = (conteo[c][f] || 0) + 1;
     fechasSet.add(f);
   });

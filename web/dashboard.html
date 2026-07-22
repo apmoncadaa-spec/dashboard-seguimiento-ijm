@@ -245,7 +245,14 @@ const selRes = document.getElementById('fRes');
 
 function llenarFiltros() {
   const grupos = [...new Set(DATA.registros.map(r => r[F.grupo]).filter(Boolean))].sort();
-  const ddjjs = [...new Set(DATA.cuotas.map(c => c.ddjj))].sort();
+  // DDJJ: union de las cuotas y de los registros, para que DDJJ sin cuota
+  // definida (p. ej. "Muestra nacional") tambien aparezcan en el filtro.
+  // "Sin asignar" NO es un DDJJ (es el marcador de filas sin asignacion),
+  // por eso se excluye del desplegable.
+  const ddjjs = [...new Set([
+    ...DATA.cuotas.map(c => c.ddjj),
+    ...DATA.registros.map(r => r[F.ddjj]),
+  ].filter(d => d && d !== 'Sin asignar'))].sort();
   const ress = CAT_ORDEN.filter(c => DATA.registros.some(r => r[F.res] === c));
   grupos.forEach(g => selGrupo.add(new Option(g === 'Mujer' ? 'Mujeres' : g, g)));
   ddjjs.forEach(d => selDdjj.add(new Option(d, d)));
