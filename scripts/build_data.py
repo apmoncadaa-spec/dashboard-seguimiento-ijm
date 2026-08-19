@@ -113,6 +113,11 @@ def _leer_bdpersonal():
             continue
         nombre = str(r[1]).strip() if len(r) > 1 and r[1] else cod
         ddjj = _ddjj_norm(r[3]) if len(r) > 3 else ""
+        # Columna REASIGNACION (2026-08-19): si tiene valor, es la asignación
+        # VIGENTE; DISTRITO conserva la original como documentación. El
+        # historial por fechas vive en CAMBIOS_DDJJ.
+        if len(r) > 4 and r[4] is not None and str(r[4]).strip():
+            ddjj = _ddjj_norm(r[4])
         mapa[cod] = {"nombre": nombre, "ddjj": ddjj}
     wb.close()
     return mapa
@@ -184,6 +189,14 @@ CAMBIOS_DDJJ = {
     "98": [  # Zara Cecilia Mori Quispe
         ("Muestra nacional", None, "2026-07-20"),
         ("Puente Piedra - Ventanilla", "2026-07-21", None),
+    ],
+    "27": [  # Jovita Alvarado Rafael
+        ("Cajamarca", None, "2026-08-18"),
+        ("Muestra nacional", "2026-08-19", None),
+    ],
+    "A0": [  # Jhenny Tingal Huatay
+        ("Cajamarca", None, "2026-08-18"),
+        ("Muestra nacional", "2026-08-19", None),
     ],
 }
 
