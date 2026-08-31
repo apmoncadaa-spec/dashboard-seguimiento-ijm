@@ -10,7 +10,7 @@ Uso:
 """
 import json
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 import openpyxl
@@ -97,8 +97,41 @@ def _cuota_ddjj(nombre):
     return CUOTA_DDJJ_MAP.get(s, s)
 
 
+def _fecha_reasig_iso(v):
+    """Normaliza FECHA_REASIGNACION de BD Personal a 'AAAA-MM-DD'.
+
+    Acepta fecha real de Excel (datetime/date) o texto 'dd/mm/aaaa' /
+    'aaaa-mm-dd'. Devuelve None si está vacía o no se puede interpretar.
+    """
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    s = str(v).strip()
+    if not s:
+        return None
+    m = re.fullmatch(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})", s)
+    if m:
+        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return None
+
+
 def _leer_bdpersonal():
-    """code -> {nombre, ddjj} desde BD Personal.xlsx (hoja 'Exported')."""
+    """code -> {nombre, ddjj} desde BD Personal.xlsx (hoja 'Exported').
+
+    Columnas E/F (2026-08-31): REASIGNACION = DDJJ vigente si tiene valor
+    (DISTRITO conserva la original como documentación) y FECHA_REASIGNACION =
+    fecha desde la que rige. Con ambas, esta función genera SOLA los tramos
+    de vigencia en CAMBIOS_DDJJ (DISTRITO hasta fecha-1, REASIGNACION desde
+    fecha): ya no hay que editar código para registrar un cambio. La tabla
+    CAMBIOS_DDJJ escrita a mano queda como respaldo y el Excel la pisa.
+    Límite: un (1) cambio por persona; un segundo cambio se maneja a mano.
+    """
     mapa = {}
     if not EXCEL_BDPERSONAL.exists():
         return mapa
@@ -113,11 +146,19 @@ def _leer_bdpersonal():
             continue
         nombre = str(r[1]).strip() if len(r) > 1 and r[1] else cod
         ddjj = _ddjj_norm(r[3]) if len(r) > 3 else ""
-        # Columna REASIGNACION (2026-08-19): si tiene valor, es la asignación
-        # VIGENTE; DISTRITO conserva la original como documentación. El
-        # historial por fechas vive en CAMBIOS_DDJJ.
+        reasig = ""
         if len(r) > 4 and r[4] is not None and str(r[4]).strip():
-            ddjj = _ddjj_norm(r[4])
+            reasig = _ddjj_norm(r[4])
+        if reasig:
+            fecha = _fecha_reasig_iso(r[5]) if len(r) > 5 else None
+            if fecha and ddjj and reasig != ddjj:
+                hasta = (date.fromisoformat(fecha) - timedelta(days=1)).isoformat()
+                CAMBIOS_DDJJ[cod] = [(ddjj, None, hasta), (reasig, fecha, None)]
+            elif not fecha and cod not in CAMBIOS_DDJJ:
+                print(f"   AVISO: cód. {cod} tiene REASIGNACION sin "
+                      f"FECHA_REASIGNACION; todas sus encuestas (incluidas "
+                      f"las antiguas) irán a '{reasig}'.")
+            ddjj = reasig  # asignación vigente
         mapa[cod] = {"nombre": nombre, "ddjj": ddjj}
     wb.close()
     return mapa
@@ -177,13 +218,15 @@ def _bd_lookup(bd, cod):
     return {}
 
 
-# --- Cambios de asignación de DDJJ con fecha de vigencia (2026-07-21) --------
-# Cuando una encuestadora cambia de DDJJ a mitad de campaña, BD Personal solo
-# guarda la asignación VIGENTE (la nueva). Esta tabla registra el historial
-# para que en la pestaña Registro su fila muestre ambas DDJJ ("anterior /
-# nueva") y el filtro por DDJJ respete las fechas de cada tramo. Para un nuevo
-# cambio, agregar aquí el código con sus tramos. MANTENER SINCRONIZADO con la
-# sección "CAMBIOS DE ASIGNACION" de 02. Encuestas/01. Sincronizacion.do.
+# --- Cambios de asignación de DDJJ con fecha de vigencia ---------------------
+# DESDE 2026-08-31 esta tabla se llena SOLA desde "BD Personal.xlsx" (columnas
+# REASIGNACION y FECHA_REASIGNACION, ver _leer_bdpersonal): para registrar un
+# nuevo cambio basta llenar esas dos celdas en el Excel; NO hace falta editar
+# este archivo ni el do de Stata (que lee las mismas columnas). Las entradas
+# de abajo quedan como RESPALDO histórico por si el Excel pierde la columna;
+# si el Excel trae fecha para un código, su entrada de aquí se pisa.
+# Cada tramo alimenta la pestaña Registro: etiqueta "anterior / nueva" y
+# filtro por DDJJ que respeta las fechas.
 # Formato: código -> [(ddjj, desde_ISO, hasta_ISO)], None = sin límite.
 CAMBIOS_DDJJ = {
     "98": [  # Zara Cecilia Mori Quispe
@@ -197,6 +240,10 @@ CAMBIOS_DDJJ = {
     "A0": [  # Jhenny Tingal Huatay
         ("Cajamarca", None, "2026-08-18"),
         ("Muestra nacional", "2026-08-19", None),
+    ],
+    "70": [  # Maria Nelly Mejia Julca
+        ("Cajamarca", None, "2026-08-16"),
+        ("Muestra nacional", "2026-08-17", None),
     ],
 }
 
