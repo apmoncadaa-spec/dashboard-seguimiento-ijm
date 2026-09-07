@@ -20,6 +20,15 @@ ROOT = Path(__file__).resolve().parents[1]
 EXCEL = ROOT / "data" / "Base - Prevalencia y dependencia.xlsx"
 OUT = ROOT / "web" / "data.js"
 
+# --- Encuestas EXCLUIDAS del conteo (auditoría de audios, 2026-09-07) --------
+# Fuente: "Auditoría de audios.xlsx", hoja "Recuperación": una fila por
+# encuesta a excluir, identificada por el NOMBRE DEL AUDIO
+# (AUDIOA/AUDIOM_<equipo>_ENC<código>_<fecha>_<hora>.m4a), único por encuesta.
+# Todas las encuestas listadas se EXCLUYEN del conteo del dashboard (data.js).
+# Para excluir más encuestas basta agregar filas a esa hoja; no se edita código.
+EXCEL_NOVALID = ROOT / "data" / "Auditoría de audios.xlsx"
+HOJA_NOVALID = "Recuperación"
+
 # --- Entrevistas Confianza (pestaña "Entrevista de actores clave") ----------
 # Base REAL: dashboard cualitativo (hoja 'Dashboard - Entrevistas', que ya trae
 # las columnas calculadas: Respuesta del actor, Modalidad, Dummy realizada, etc.)
@@ -771,12 +780,91 @@ def build_sobrevivientes() -> None:
           f"distritos: {dict(Counter(r[0] for r in registros))}")
 
 
+def _leer_no_validadas():
+    """(audios, llaves) desde la hoja 'Recuperación' de "Auditoría de audios.xlsx".
+
+    audios : set de nombres de archivo de audio (minúsculas, sin espacios).
+             Es el identificador ÚNICO de cada encuesta; el cruce PRINCIPAL es
+             exacto contra la columna 'archivoaudio' de la base.
+    llaves : set (Grupo, equipoid, código) derivado del NOMBRE del audio
+             (AUDIO[A|M]_<equipoid>_ENC<código>_...). Solo se usa como RESPALDO
+             si la base aún no trae 'archivoaudio' (versiones antiguas). OJO:
+             el ENC del nombre no siempre coincide con codigoenc, por eso el
+             respaldo puede fallar en casos puntuales; el cruce exacto no.
+    """
+    audios, llaves = set(), set()
+    if not EXCEL_NOVALID.exists():
+        print(f"   AVISO: no se encontró {EXCEL_NOVALID.name}; "
+              f"no se excluye ninguna encuesta del conteo.")
+        return audios, llaves
+    wb = openpyxl.load_workbook(EXCEL_NOVALID, data_only=True, read_only=True)
+    # tolerante al acento en el nombre de la hoja
+    hoja = next((h for h in wb.sheetnames
+                 if h.strip().lower().replace("ó", "o") ==
+                 HOJA_NOVALID.lower().replace("ó", "o")), wb.sheetnames[0])
+    ws = wb[hoja]
+    rx = re.compile(r"^AUDIO([AM])_([0-9A-Fa-f]+)_ENC(\d+)_", re.I)
+    gmap = {"A": "Adolescentes", "M": "Mujer"}
+    for r in ws.iter_rows(min_row=2, values_only=True):
+        if not r or not r[0]:
+            continue
+        a = str(r[0]).strip()
+        audios.add(a.lower())
+        m = rx.match(a)
+        if m:
+            llaves.add((gmap[m.group(1).upper()], m.group(2).lower(), m.group(3)))
+    wb.close()
+    return audios, llaves
+
+
+def _codenc_str(v):
+    """Codigo_encuesta como texto sin decimales ('510013.0' -> '510013')."""
+    if pd.isna(v):
+        return ""
+    s = str(v).strip()
+    return s[:-2] if s.endswith(".0") else s
+
+
 def main() -> None:
     base = pd.read_excel(EXCEL, sheet_name="Base (0)")
     cuotas = pd.read_excel(EXCEL, sheet_name="Cuotas")
 
     # --- Registros (una fila por encuesta) --------------------------------
     base = base[base["Resultado"].notna()].copy()
+
+    # --- Excluir encuestas NO VALIDADAS (auditoría de audios) -------------
+    nv_audios, nv_llaves = _leer_no_validadas()
+    if nv_audios:
+        col_audio = next((c for c in base.columns
+                          if str(c).strip().lower() == "archivoaudio"), None)
+        if col_audio is not None:
+            # Cruce EXACTO por nombre de audio (identificador único).
+            _ka = base[col_audio].astype(str).str.strip().str.lower()
+            _mask = _ka.isin(nv_audios)
+            n_exc = int(_mask.sum())
+            base = base[~_mask].copy()
+            print(f"   Encuestas NO VALIDADAS excluidas del conteo: {n_exc} "
+                  f"(lista: {len(nv_audios)} audios; cruce exacto por archivoaudio)")
+            if n_exc < len(nv_audios):
+                print(f"   AVISO: {len(nv_audios) - n_exc} audio(s) de la lista "
+                      f"no aparecieron en la base (revisar nombres).")
+        else:
+            # RESPALDO (base antigua sin 'archivoaudio'): llave derivada del
+            # nombre del audio. Menos precisa si ENC != codigoenc.
+            print("   AVISO: la base no trae la columna 'archivoaudio' "
+                  "(correr seccion 5.3 del do actualizado); se usa el cruce "
+                  "de RESPALDO por (grupo, equipo, codigo).")
+            _kg = base["Grupo"].astype(str).str.strip()
+            _ki = base["ID"].astype(str).str.strip().str.lower()
+            _kc = base["Codigo_encuesta"].map(_codenc_str)
+            _mask = pd.Series(
+                [(g, i, c) in nv_llaves for g, i, c in zip(_kg, _ki, _kc)],
+                index=base.index,
+            )
+            n_exc = int(_mask.sum())
+            base = base[~_mask].copy()
+            print(f"   Encuestas NO VALIDADAS excluidas del conteo: {n_exc} "
+                  f"(lista: {len(nv_llaves)} llaves)")
     base["fecha"] = pd.to_datetime(base["Fecha"], dayfirst=True, errors="coerce")
 
     ini = base["Inicio"].map(hora_a_min)
