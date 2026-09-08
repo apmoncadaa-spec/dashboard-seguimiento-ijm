@@ -825,12 +825,80 @@ def _codenc_str(v):
     return s[:-2] if s.endswith(".0") else s
 
 
+def _chequeos_audio(base):
+    """Chequeos de consistencia y deduplicación por 'archivoaudio' (2026-09-07).
+
+    archivoaudio es el identificador ÚNICO de cada encuesta (la llave
+    equipo+código puede repetirse por códigos mal digitados). Aquí:
+      a) AUDIO DUPLICADO = la MISMA encuesta sincronizada más de una vez:
+         se cuenta UNA sola (se elimina la fila repetida) y se avisa.
+      b) equipo+código repetido con audios DISTINTOS: NO es duplicado real,
+         son dos encuestas distintas (posible código mal digitado). Solo se
+         avisa; ambas se conservan en el conteo.
+      c) ENC del nombre del audio != codigoenc: posible código mal digitado
+         en campo. Solo aviso informativo.
+      d) Encuestas sin audio: se conservan (aviso).
+    Devuelve la base (deduplicada si aplica). Si la base aún no trae la
+    columna (versión antigua), no hace nada.
+    """
+    col = next((c for c in base.columns
+                if str(c).strip().lower() == "archivoaudio"), None)
+    if col is None:
+        return base
+    au = base[col].astype(str).str.strip()
+    tiene = au.ne("") & ~au.str.lower().isin(("nan", "."))
+    au_low = au.str.lower()
+
+    # (a) misma encuesta sincronizada 2+ veces -> se cuenta una sola
+    dup_total = tiene & au_low.duplicated(keep=False)
+    dup_drop = tiene & au_low.duplicated(keep="first")
+    if int(dup_drop.sum()):
+        ejemplos = au[dup_total].unique()[:3].tolist()
+        print(f"   AVISO: {int(dup_drop.sum())} fila(s) con el MISMO audio "
+              f"(encuesta sincronizada más de una vez); se cuentan una sola "
+              f"vez. Ej.: {ejemplos}")
+        base = base[~dup_drop].copy()
+        au, au_low, tiene = au[~dup_drop], au_low[~dup_drop], tiene[~dup_drop]
+
+    # (b) equipo+código repetido pero con audios DISTINTOS: no es duplicado
+    _kg = base["Grupo"].astype(str).str.strip()
+    _ki = base["ID"].astype(str).str.strip().str.lower()
+    _kc = base["Codigo_encuesta"].map(_codenc_str)
+    _key = _kg + "|" + _ki + "|" + _kc
+    rep = _key.duplicated(keep=False) & tiene
+    if int(rep.sum()):
+        n_grupos = base.loc[rep, :].groupby(_key[rep]).ngroups
+        print(f"   Nota: {n_grupos} llave(s) equipo+código repetidas con "
+              f"audios DISTINTOS: no son duplicados reales (posible código "
+              f"mal digitado); se cuentan todas.")
+
+    # (c) ENC del nombre del audio vs codigoenc
+    enc = au.str.extract(r"_ENC(\d+)_", flags=re.I)[0]
+    difiere = tiene & enc.notna() & (enc != _kc)
+    if int(difiere.sum()):
+        ej = base.loc[difiere, [col, "Codigo_encuesta"]].head(3)
+        pares = [f"{r[col]} vs codigo {r['Codigo_encuesta']}"
+                 for _, r in ej.iterrows()]
+        print(f"   Nota: {int(difiere.sum())} encuesta(s) donde el ENC del "
+              f"audio no coincide con codigoenc (posible código mal "
+              f"digitado). Ej.: {pares[:2]}")
+
+    # (d) sin audio
+    if int((~tiene).sum()):
+        print(f"   Nota: {int((~tiene).sum())} encuesta(s) sin archivo de "
+              f"audio; se conservan en el conteo.")
+    return base
+
+
 def main() -> None:
     base = pd.read_excel(EXCEL, sheet_name="Base (0)")
     cuotas = pd.read_excel(EXCEL, sheet_name="Cuotas")
 
     # --- Registros (una fila por encuesta) --------------------------------
     base = base[base["Resultado"].notna()].copy()
+
+    # --- Chequeos + deduplicación por archivoaudio -------------------------
+    base = _chequeos_audio(base)
 
     # --- Excluir encuestas NO VALIDADAS (auditoría de audios) -------------
     nv_audios, nv_llaves = _leer_no_validadas()
