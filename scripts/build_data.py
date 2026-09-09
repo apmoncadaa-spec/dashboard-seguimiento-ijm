@@ -186,6 +186,7 @@ REG_COLNAMES = {
     "fi": "fechainicioenc",
     "ff": "fechafinenc",
     "res": "p800resultado",
+    "audio": "archivoaudio",   # identificador único; para excluir no validadas
 }
 
 
@@ -535,6 +536,11 @@ def build_registro() -> None:
     codes_por_persona = defaultdict(Counter)       # persona -> Counter(cod)
     nombres_por_persona = defaultdict(Counter)     # persona -> Counter(nombre crudo)
     ddjj_por_persona = defaultdict(Counter)        # persona -> Counter(ddjj por código)
+    # Encuestas NO VALIDADAS (hoja Recuperación de "Auditoría de audios.xlsx"):
+    # se excluyen también de esta pestaña, cruzando por 'archivoaudio' (2026-09-09),
+    # para que la cifra de completas coincida con la pestaña Avance.
+    nv_audios, _ = _leer_no_validadas()
+    n_excluidas = 0
     with open(REG_EXTRACT, encoding="utf-8-sig", newline="") as fh:
         rd = _csv.DictReader(fh)
         # Normaliza encabezados a las claves esperadas (tolerante a mayúsculas).
@@ -544,7 +550,17 @@ def build_registro() -> None:
             for k, name in REG_COLNAMES.items():
                 if low == name:
                     campo[k] = col
+        if campo["audio"] is None and nv_audios:
+            print("   AVISO: el extracto no trae la columna 'archivoaudio' "
+                  "(correr scripts/extraer_registro.py actualizado); la pestaña "
+                  "Registro NO excluye las encuestas en recuperación.")
         for row in rd:
+            # Excluir encuestas no validadas (cruce EXACTO por archivo de audio).
+            if campo["audio"] and nv_audios:
+                _au = str(row.get(campo["audio"]) or "").strip().lower()
+                if _au and _au in nv_audios:
+                    n_excluidas += 1
+                    continue
             cod = _norm_cod(row.get(campo["cod"])) if campo["cod"] else ""
             nombre_base = _clean(row.get(campo["enc"])) if campo["enc"] else ""
             # Identidad de la persona: nombre de la base; si falta, el código.
@@ -630,6 +646,9 @@ def build_registro() -> None:
     comp = sum(1 for r in registros if r[2] == "Completa")
     print(f"OK -> {OUT_REG.relative_to(ROOT)}")
     print(f"   encuestas: {len(registros)} | encuestadoras: {len(encuestadoras)} | completas: {comp}")
+    if n_excluidas:
+        print(f"   encuestas NO VALIDADAS excluidas de la pestaña Registro: {n_excluidas} "
+              f"(cruce exacto por archivoaudio)")
 
 
 def _norm_revisor_map(nombres):

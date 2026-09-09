@@ -45,9 +45,14 @@ FUENTES = {
 
 # Columnas que conserva el extracto (se localizan POR NOMBRE en el encabezado,
 # así no importa que cada base las tenga en posiciones distintas).
-COLS_FUENTE = ["CODENCU", "ENCUESTADOR", "FECHAINICIOENC", "FECHAFINENC", "P800RESULTADO"]
+COLS_FUENTE = ["CODENCU", "ENCUESTADOR", "FECHAINICIOENC", "FECHAFINENC", "P800RESULTADO",
+               "ARCHIVOAUDIO"]
 # Nombres de salida (en minúscula, como los espera build_data.py / build_registro).
-COLS_SALIDA = ["grupo", "codencu", "encuestador", "fechainicioenc", "fechafinenc", "p800resultado"]
+# 'archivoaudio' (2026-09-09): identificador ÚNICO de cada encuesta; permite que
+# la pestaña Registro excluya las encuestas en recuperación (hoja Recuperación de
+# "Auditoría de audios.xlsx") igual que la pestaña Avance, y ambas cifras coincidan.
+COLS_SALIDA = ["grupo", "codencu", "encuestador", "fechainicioenc", "fechafinenc", "p800resultado",
+               "archivoaudio"]
 
 
 def _ubicar_bases():
@@ -79,6 +84,7 @@ def _ubicar_bases():
 # persona equivocada (p. ej. la supervisora con código 01).
 _RE_FECHA = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
 _RE_COD = re.compile(r"^[A-Za-zÑñ]?\d{1,3}$")  # acepta alfanuméricos (A0, A1, ...)
+_RE_AUDIO = re.compile(r"^AUDIO[AM]_[0-9A-Fa-f]+_ENC\d+_", re.I)  # nombre de archivo de audio
 
 
 def _tiene_letras(s):
@@ -124,7 +130,16 @@ def _realinear(row, hmap, extra):
         if j < len(row) and re.match(r"^\d{2}$", row[j].strip()):
             p800 = row[j].strip()
             break
-    return [codencu, encuestador, fi, ff, p800]
+
+    # 4) archivo de audio: validar el patrón AUDIO[A|M]_..., probando corrimientos
+    audio = ""
+    ia = hmap["ARCHIVOAUDIO"]
+    for k in (extra, s_cod, 0):
+        j = ia + k
+        if j < len(row) and _RE_AUDIO.match(row[j].strip()):
+            audio = row[j].strip()
+            break
+    return [codencu, encuestador, fi, ff, p800, audio]
 
 
 def main():
