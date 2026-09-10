@@ -107,6 +107,17 @@
     background: #404040; color: #fff; font-weight: bold; padding: 7px 10px;
   }
 
+  /* Desagregación de la Muestra nacional por departamento */
+  tr.mn-toggle { cursor: pointer; }
+  tr.mn-toggle:hover td { background: #eceae7; }
+  tr.mn-toggle .chev {
+    display: inline-block; width: 14px; color: var(--rojo); font-size: 10px;
+  }
+  tr.mn-dep td { background: #fbfaf9; font-size: 11.5px; }
+  tr.mn-dep td:first-child { padding-left: 34px; }
+  tr.mn-dep.cero td { color: #b0b0b0; font-style: italic; }
+  tr.mn-dep td { border-bottom: 1px dotted #e6e6e6; }
+
   /* Distribución por población */
   .pop { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 10px 0; }
   .pop .big { display: flex; align-items: center; gap: 10px; }
@@ -140,6 +151,7 @@
     <div class="filters">
       <div class="filter"><label>Población de estudio</label><select id="fGrupo"><option value="">Todas</option></select></div>
       <div class="filter"><label>Distrito Judicial</label><select id="fDdjj"><option value="">Todas</option></select></div>
+      <div class="filter" id="filterDep" style="display:none"><label>Departamento (M. nacional)</label><select id="fDep"><option value="">Todos</option></select></div>
       <div class="filter"><label>Resultado</label><select id="fRes"><option value="">Todas</option></select></div>
     </div>
     <div class="updated" id="updated"></div>
@@ -235,13 +247,22 @@ const CAT_COLOR = {
 const CAT_CORTO = { 'No hay población objetivo en la vivienda': 'No hay población objetivo' };
 
 // Índices de los campos en cada registro (ver meta.campos de data.js)
-const F = { fecha: 0, ddjj: 1, grupo: 2, sexo: 3, edad: 4, res: 5, dur: 6 };
+const F = { fecha: 0, ddjj: 1, grupo: 2, sexo: 3, edad: 4, res: 5, dur: 6, dep: 7 };
 const DUR_MAX_VALIDA = 180; // min — corte de atípicos para el KPI de duración
+
+// Desagregación de la Muestra nacional (deps_mn / cuotas_mn pueden no venir
+// en un data.js antiguo; los "|| ..." mantienen compatibilidad).
+const MN = 'Muestra nacional';
+const DEPS_MN = DATA.deps_mn || [];
+const CUOTAS_MN = DATA.cuotas_mn || {};
+const SIN_DEP = '(Sin departamento)';
 
 /* ================= Filtros ================= */
 const selGrupo = document.getElementById('fGrupo');
 const selDdjj = document.getElementById('fDdjj');
 const selRes = document.getElementById('fRes');
+const selDep = document.getElementById('fDep');
+const filterDep = document.getElementById('filterDep');
 
 function llenarFiltros() {
   const grupos = [...new Set(DATA.registros.map(r => r[F.grupo]).filter(Boolean))].sort();
@@ -257,17 +278,40 @@ function llenarFiltros() {
   grupos.forEach(g => selGrupo.add(new Option(g === 'Mujer' ? 'Mujeres' : g, g)));
   ddjjs.forEach(d => selDdjj.add(new Option(d, d)));
   ress.forEach(c => selRes.add(new Option(CAT_CORTO[c] || c, c)));
-  [selGrupo, selDdjj, selRes].forEach(s => s.addEventListener('change', render));
+
+  // Departamentos de la Muestra nacional: lista fija + los que aparezcan en
+  // los datos y no estén en la lista (p. ej. '(Sin departamento)').
+  const depsData = [...new Set(DATA.registros
+    .filter(r => r[F.ddjj] === MN && r[F.dep]).map(r => r[F.dep]))];
+  const deps = [...new Set([...DEPS_MN, ...depsData])]
+    .sort((a, b) => (a === SIN_DEP) - (b === SIN_DEP) || a.localeCompare(b, 'es'));
+  deps.forEach(d => selDep.add(new Option(d, d)));
+
+  [selGrupo, selDdjj, selRes, selDep].forEach(s => s.addEventListener('change', render));
+  // El filtro de departamento solo aplica (y se muestra) con Muestra nacional.
+  selDdjj.addEventListener('change', () => {
+    const esMN = selDdjj.value === MN;
+    filterDep.style.display = esMN ? '' : 'none';
+    if (!esMN) selDep.value = '';
+  });
 }
 
 function filtrar() {
   const g = selGrupo.value, d = selDdjj.value, res = selRes.value;
+  const dep = (d === MN) ? selDep.value : '';
   return DATA.registros.filter(r =>
-    (!g || r[F.grupo] === g) && (!d || r[F.ddjj] === d) && (!res || r[F.res] === res));
+    (!g || r[F.grupo] === g) && (!d || r[F.ddjj] === d) &&
+    (!res || r[F.res] === res) && (!dep || r[F.dep] === dep));
 }
 
 function cuotaFiltrada(soloDdjj) {
   const g = selGrupo.value, d = soloDdjj !== undefined ? soloDdjj : selDdjj.value;
+  // Con un departamento de la Muestra nacional seleccionado, la cuota es la de
+  // ese departamento (hoja 'Cuotas MN'). No hay cuota MN por grupo etario, así
+  // que si además se filtra por población el % de avance no aplica (cuota 0 -> '—').
+  if (soloDdjj === undefined && selDdjj.value === MN && selDep.value) {
+    return g ? 0 : (CUOTAS_MN[selDep.value] || 0);
+  }
   return DATA.cuotas
     .filter(c => (!g || c.grupo === g) && (!d || c.ddjj === d))
     .reduce((s, c) => s + c.cuota, 0);
@@ -412,6 +456,36 @@ function renderLinea(regs) {
   });
 }
 
+// Estado del detalle por departamento de la Muestra nacional (persiste entre renders)
+let mnAbierto = false;
+
+function filasDeptosMN(regs) {
+  // Subfilas con los departamentos de la Muestra nacional. Se muestran TODOS
+  // los de la lista (los sin encuestas en gris con 0) + cualquier otro valor
+  // presente en los datos, para que ninguna encuesta quede fuera del detalle.
+  const rsMN = regs.filter(r => r[F.ddjj] === MN);
+  const compPorDep = {};
+  rsMN.forEach(r => {
+    if (r[F.res] !== 'Completa') return;
+    const dep = r[F.dep] || SIN_DEP;
+    compPorDep[dep] = (compPorDep[dep] || 0) + 1;
+  });
+  const deps = [...new Set([...DEPS_MN, ...Object.keys(compPorDep)])]
+    .sort((a, b) => (a === SIN_DEP) - (b === SIN_DEP) ||
+                    (compPorDep[b] || 0) - (compPorDep[a] || 0) ||
+                    a.localeCompare(b, 'es'));
+  const hayCuotas = Object.keys(CUOTAS_MN).length > 0;
+  return deps.map(dep => {
+    const c = compPorDep[dep] || 0;
+    const q = CUOTAS_MN[dep];
+    const qTxt = hayCuotas && q !== undefined ? fmt(q) : '—';
+    const pTxt = hayCuotas && q !== undefined ? pct(c, q) : '—';
+    return `<tr class="mn-dep${c === 0 ? ' cero' : ''}"><td>${dep}</td>` +
+           `<td class="num">${fmt(c)}</td><td class="num">${qTxt}</td>` +
+           `<td class="num">${pTxt}</td></tr>`;
+  }).join('');
+}
+
 function renderTabla(regs) {
   const tbody = document.getElementById('tbodyDdjj');
   const tfoot = document.getElementById('tfootDdjj');
@@ -425,11 +499,22 @@ function renderTabla(regs) {
     const c = conteo(rs, F.res, 'Completa');
     const q = cuotaFiltrada(d);
     totC += c; totQ += q;
-    filas += `<tr><td>${d}</td><td class="num">${fmt(c)}</td><td class="num">${fmt(q)}</td><td class="num">${pct(c, q)}</td></tr>`;
+    if (d === MN) {
+      // Fila clicable: despliega el detalle por departamento.
+      filas += `<tr class="mn-toggle" id="filaMN" title="Clic para ver el detalle por departamento">` +
+               `<td><span class="chev">${mnAbierto ? '&#9660;' : '&#9654;'}</span>${d}</td>` +
+               `<td class="num">${fmt(c)}</td><td class="num">${fmt(q)}</td><td class="num">${pct(c, q)}</td></tr>`;
+      if (mnAbierto) filas += filasDeptosMN(regs);
+    } else {
+      filas += `<tr><td>${d}</td><td class="num">${fmt(c)}</td><td class="num">${fmt(q)}</td><td class="num">${pct(c, q)}</td></tr>`;
+    }
   });
   tbody.innerHTML = filas || '<tr><td colspan="4" class="empty">Sin datos para los filtros seleccionados</td></tr>';
   tfoot.innerHTML = ddjjs.length
     ? `<tr><td>Total</td><td class="num">${fmt(totC)}</td><td class="num">${fmt(totQ)}</td><td class="num">${pct(totC, totQ)}</td></tr>` : '';
+
+  const filaMN = document.getElementById('filaMN');
+  if (filaMN) filaMN.addEventListener('click', () => { mnAbierto = !mnAbierto; renderTabla(filtrar()); });
 }
 
 function renderPoblacion(regs) {

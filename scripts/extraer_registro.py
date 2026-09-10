@@ -46,13 +46,15 @@ FUENTES = {
 # Columnas que conserva el extracto (se localizan POR NOMBRE en el encabezado,
 # así no importa que cada base las tenga en posiciones distintas).
 COLS_FUENTE = ["CODENCU", "ENCUESTADOR", "FECHAINICIOENC", "FECHAFINENC", "P800RESULTADO",
-               "ARCHIVOAUDIO"]
+               "ARCHIVOAUDIO", "NOMDEP_E"]
 # Nombres de salida (en minúscula, como los espera build_data.py / build_registro).
 # 'archivoaudio' (2026-09-09): identificador ÚNICO de cada encuesta; permite que
 # la pestaña Registro excluya las encuestas en recuperación (hoja Recuperación de
 # "Auditoría de audios.xlsx") igual que la pestaña Avance, y ambas cifras coincidan.
+# 'departamento' (2026-09-10): NOMDEP_E de la vivienda; alimenta el filtro por
+# departamento de la Muestra nacional en la pestaña Registro.
 COLS_SALIDA = ["grupo", "codencu", "encuestador", "fechainicioenc", "fechafinenc", "p800resultado",
-               "archivoaudio"]
+               "archivoaudio", "departamento"]
 
 
 def _ubicar_bases():
@@ -139,7 +141,19 @@ def _realinear(row, hmap, extra):
         if j < len(row) and _RE_AUDIO.match(row[j].strip()):
             audio = row[j].strip()
             break
-    return [codencu, encuestador, fi, ff, p800, audio]
+
+    # 5) departamento (NOMDEP_E): va ANTES de DIRECCION (la columna que suele
+    # introducir los ';' extra), así que normalmente no está corrido (k=0);
+    # igual se valida que sea texto con letras, probando corrimientos.
+    dep = ""
+    idp = hmap["NOMDEP_E"]
+    for k in (0, s_cod, extra):
+        j = idp + k
+        if j < len(row) and _tiene_letras(row[j]) and not _RE_COD.match(row[j].strip()) \
+                and not _RE_FECHA.match(row[j].strip()):
+            dep = row[j].strip()
+            break
+    return [codencu, encuestador, fi, ff, p800, audio, dep]
 
 
 def main():

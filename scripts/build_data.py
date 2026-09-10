@@ -106,6 +106,73 @@ def _cuota_ddjj(nombre):
     return CUOTA_DDJJ_MAP.get(s, s)
 
 
+# --- Desagregación de la Muestra nacional por departamento (2026-09-10) ------
+# Departamentos donde se levanta la Muestra nacional. El dashboard los muestra
+# SIEMPRE (aunque vayan en 0) para monitorear qué regiones faltan arrancar.
+DEPARTAMENTOS_MN = [
+    "Áncash", "Arequipa", "Cajamarca", "Callao", "Cusco", "Huancavelica",
+    "Ica", "Junín", "La Libertad", "Lambayeque", "Lima", "Piura", "Puno",
+    "San Martín", "Tacna",
+]
+SIN_DEP = "(Sin departamento)"   # filas de MN sin la variable Departamento
+
+_DEP_CANON = None  # cache: clave sin tildes/mayúsculas -> grafía canónica
+
+
+def _dep_norm_key(s):
+    """Clave de comparación: sin tildes, mayúsculas, espacios colapsados."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return " ".join(s.upper().split())
+
+
+def _dep_mn(v):
+    """Normaliza el Departamento de la base a la grafía canónica de la lista.
+
+    Valores no listados se conservan (title case) para que ninguna encuesta
+    desaparezca del detalle; vacíos -> '(Sin departamento)'.
+    """
+    global _DEP_CANON
+    if _DEP_CANON is None:
+        _DEP_CANON = {_dep_norm_key(d): d for d in DEPARTAMENTOS_MN}
+    if v is None or (isinstance(v, float) and pd.isna(v)) or not str(v).strip():
+        return SIN_DEP
+    key = _dep_norm_key(v)
+    return _DEP_CANON.get(key, str(v).strip().title())
+
+
+def _leer_cuotas_mn():
+    """Cuotas por departamento de la Muestra nacional (opcional).
+
+    Lee la hoja 'Cuotas MN' del Excel cuali del dashboard (columnas:
+    Departamento | Cuota). Vive ahí (y no en la base de prevalencia) porque ese
+    archivo se mantiene a mano y Stata no lo regenera. Fuente de las cuotas:
+    cronograma, hoja Conglomerados, DDJJ NACIONAL (total 1,479). Si la hoja no
+    existe, devuelve {} y el detalle se muestra sin % de avance.
+    """
+    try:
+        df = pd.read_excel(EXCEL_CUALI, sheet_name="Cuotas MN")
+    except Exception:  # noqa: BLE001  (la hoja puede no existir todavía)
+        print("   Nota: no hay hoja 'Cuotas MN'; el detalle por departamento "
+              "se muestra sin % de avance.")
+        return {}
+    cols = {str(c).strip().lower(): c for c in df.columns}
+    cdep, ccuo = cols.get("departamento"), cols.get("cuota")
+    if not cdep or not ccuo:
+        print("   AVISO: la hoja 'Cuotas MN' debe tener columnas "
+              "'Departamento' y 'Cuota'; se ignora.")
+        return {}
+    out = {}
+    for _, r in df.iterrows():
+        if pd.isna(r[cdep]) or pd.isna(r[ccuo]):
+            continue
+        out[_dep_mn(r[cdep])] = out.get(_dep_mn(r[cdep]), 0) + int(r[ccuo])
+    print(f"   Cuotas MN por departamento: {len(out)} departamentos, "
+          f"total {sum(out.values())}")
+    return out
+
+
 def _fecha_reasig_iso(v):
     """Normaliza FECHA_REASIGNACION de BD Personal a 'AAAA-MM-DD'.
 
@@ -187,6 +254,7 @@ REG_COLNAMES = {
     "ff": "fechafinenc",
     "res": "p800resultado",
     "audio": "archivoaudio",   # identificador único; para excluir no validadas
+    "dep": "departamento",     # NOMDEP_E; filtro por departamento (M. nacional)
 }
 
 
@@ -574,7 +642,10 @@ def build_registro() -> None:
             ff = _fecha_iso(row.get(campo["ff"])) if campo["ff"] else None
             if res is None and fi is None and ff is None:
                 continue
-            registros.append([persona, grupo, res, fi, ff])
+            # Departamento normalizado (2026-09-10): mismo canon que la pestaña
+            # Avance (_dep_mn), para el filtro dependiente de Muestra nacional.
+            dep = _dep_mn(row.get(campo["dep"])) if campo["dep"] else SIN_DEP
+            registros.append([persona, grupo, res, fi, ff, dep])
             if cod:
                 codes_por_persona[persona][cod] += 1
                 d = _bd_lookup(bd, cod).get("ddjj", "")
@@ -635,10 +706,11 @@ def build_registro() -> None:
             "n_registros": len(registros),
             "fecha_min": min(fechas) if fechas else None,
             "fecha_max": max(fechas) if fechas else None,
-            "campos": ["persona", "grupo", "resultado", "fecha_inicio", "fecha_fin"],
+            "campos": ["persona", "grupo", "resultado", "fecha_inicio", "fecha_fin", "dep"],
         },
         "encuestadoras": encuestadoras,
         "registros": registros,
+        "deps_mn": DEPARTAMENTOS_MN,
     }
     js = "// GENERADO por scripts/build_data.py — NO EDITAR A MANO\n"
     js += "const DATA_REG = " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";\n"
@@ -963,14 +1035,20 @@ def main() -> None:
 
     registros = []
     for _, r in base.iterrows():
+        ddjj = str(r["DDJJ"]) if pd.notna(r["DDJJ"]) else None
+        # Departamento: solo se publica para la Muestra nacional (es la única
+        # DDJJ con desagregación en el dashboard); null en el resto para no
+        # engordar data.js.
+        dep = _dep_mn(r.get("Departamento")) if ddjj == "Muestra nacional" else None
         registros.append([
             r["fecha"].strftime("%Y-%m-%d") if pd.notna(r["fecha"]) else None,
-            str(r["DDJJ"]) if pd.notna(r["DDJJ"]) else None,
+            ddjj,
             str(r["Grupo"]) if pd.notna(r["Grupo"]) else None,
             str(r["Sexo"]) if pd.notna(r["Sexo"]) and str(r["Sexo"]) != "." else None,
             int(r["Edad"]) if pd.notna(r["Edad"]) else None,
             str(r["Resultado"]),
             float(r["dur_min"]) if pd.notna(r["dur_min"]) else None,
+            dep,
         ])
 
     # --- Cuotas ------------------------------------------------------------
@@ -991,10 +1069,15 @@ def main() -> None:
             "n_registros": len(registros),
             "cuota_total": int(cuotas["Cuota"].sum()),
             # Campos de cada registro, en orden:
-            "campos": ["fecha", "ddjj", "grupo", "sexo", "edad", "resultado", "dur_min"],
+            "campos": ["fecha", "ddjj", "grupo", "sexo", "edad", "resultado",
+                       "dur_min", "dep"],
         },
         "registros": registros,
         "cuotas": cuotas_out,
+        # Desagregación de la Muestra nacional: lista fija de departamentos
+        # (se muestran aunque vayan en 0) y cuotas opcionales por departamento.
+        "deps_mn": DEPARTAMENTOS_MN,
+        "cuotas_mn": _leer_cuotas_mn(),
     }
 
     js = "// GENERADO por scripts/build_data.py — NO EDITAR A MANO\n"

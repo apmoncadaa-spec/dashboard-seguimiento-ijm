@@ -94,6 +94,7 @@
       </select></div>
       <div class="filter"><label>Resultado</label><select id="fRes"></select></div>
       <div class="filter"><label>Distrito Judicial</label><select id="fDdjj"></select></div>
+      <div class="filter" id="filterDep" style="display:none"><label>Departamento (M. nacional)</label><select id="fDep"><option value="">Todos</option></select></div>
       <div class="filter"><label>Base de fecha</label><select id="fBase">
         <option value="inicio">Fecha de inicio</option><option value="fin">Fecha de fin</option>
       </select></div>
@@ -124,7 +125,13 @@
 
 <script>
 /* ================= Configuración ================= */
-const F = { cod: 0, grupo: 1, res: 2, fi: 3, ff: 4 };
+const F = { cod: 0, grupo: 1, res: 2, fi: 3, ff: 4, dep: 5 };
+// Desagregación por departamento de la Muestra nacional (2026-09-10): el
+// filtro Departamento solo aparece al elegir 'Muestra nacional' en el filtro
+// de Distrito Judicial, igual que en la pestaña Avance de encuestas.
+const MN = 'Muestra nacional';
+const DEPS_MN = DATA_REG.deps_mn || [];
+const SIN_DEP = '(Sin departamento)';
 // Orden de resultados para el desplegable
 const RES_ORDEN = ['Completa', 'Cita - Aplazada', 'Ausente', 'Discapacitada',
                    'No habita población objetivo en la vivienda', 'Rechazada', 'Incompleta'];
@@ -132,6 +139,7 @@ const RES_ORDEN = ['Completa', 'Cita - Aplazada', 'Ausente', 'Discapacitada',
 const selGrupo = document.getElementById('fGrupo');
 const selRes = document.getElementById('fRes');
 const selDdjj = document.getElementById('fDdjj');
+const selDep = document.getElementById('fDep');
 const selBase = document.getElementById('fBase');
 
 /* ================= Filtros ================= */
@@ -152,7 +160,26 @@ function llenarFiltros() {
   ddjjs.forEach(d => selDdjj.add(new Option(d, d)));
   selDdjj.value = 'Todos';
 
-  [selGrupo, selRes, selDdjj, selBase].forEach(s => s.addEventListener('change', render));
+  // Departamento (solo Muestra nacional): los 15 del diseño + los que aparezcan
+  // en las encuestas de encuestadoras de MN y no estén en la lista (p. ej. sin dato).
+  const esMN = e => e.asig ? e.asig.some(a => a.ddjj === MN) : e.ddjj === MN;
+  const depsData = new Set(DATA_REG.registros
+    .filter(r => { const e = DATA_REG.encuestadoras[r[F.cod]]; return e && esMN(e); })
+    .map(r => r[F.dep]).filter(Boolean));
+  const extras = [...depsData].filter(d => !DEPS_MN.includes(d) && d !== SIN_DEP)
+    .sort((a, b) => a.localeCompare(b, 'es'));
+  const opciones = [...DEPS_MN, ...extras];
+  if (depsData.has(SIN_DEP)) opciones.push(SIN_DEP);
+  opciones.forEach(d => selDep.add(new Option(d, d)));
+
+  // El filtro de departamento solo se muestra al elegir Muestra nacional.
+  selDdjj.addEventListener('change', () => {
+    const esMNsel = selDdjj.value === MN;
+    document.getElementById('filterDep').style.display = esMNsel ? '' : 'none';
+    if (!esMNsel) selDep.value = '';
+  });
+
+  [selGrupo, selRes, selDdjj, selDep, selBase].forEach(s => s.addEventListener('change', render));
 }
 
 function filtrar() {
@@ -186,9 +213,11 @@ function render() {
   // Encuestadoras a mostrar (las del mapa), filtradas por Distrito Judicial y
   // ordenadas por su código primario
   const ddjjSel = selDdjj.value;
+  // Departamento (solo aplica con Muestra nacional seleccionada)
+  const depSel = ddjjSel === MN ? selDep.value : '';
   const matchDdjj = e => ddjjSel === 'Todos' ||
     (e.asig ? e.asig.some(a => a.ddjj === ddjjSel) : e.ddjj === ddjjSel);
-  const encs = Object.keys(DATA_REG.encuestadoras)
+  let encs = Object.keys(DATA_REG.encuestadoras)
     .filter(k => matchDdjj(DATA_REG.encuestadoras[k]))
     .sort((a, b) => codNum(DATA_REG.encuestadoras[a].cod) - codNum(DATA_REG.encuestadoras[b].cod));
   const encSet = new Set(encs);
@@ -208,11 +237,16 @@ function render() {
   regs.forEach(r => {
     const c = r[F.cod], f = r[base];
     if (!f || !encSet.has(c)) return;
+    if (depSel && r[F.dep] !== depSel) return;   // filtro por departamento (MN)
     if (!enTramo(DATA_REG.encuestadoras[c], f)) return;
     conteo[c][f] = (conteo[c][f] || 0) + 1;
     fechasSet.add(f);
   });
   const fechas = [...fechasSet].sort();
+
+  // Con un departamento elegido, la matriz muestra solo a las encuestadoras
+  // que tienen encuestas en ese departamento (las demás quedarían en cero).
+  if (depSel) encs = encs.filter(c => fechas.some(f => conteo[c][f]));
 
   // KPIs
   let granTotal = 0;
@@ -270,8 +304,9 @@ function render() {
     `<table class="matrix">${head}${body}${foot}</table>`;
 
   const resTxt = selRes.value === 'Todos' ? 'todas las visitas' : `resultado "${selRes.value}"`;
+  const depTxt = depSel ? ` — Muestra nacional, departamento: ${depSel}` : '';
   document.getElementById('subT').textContent =
-    `Número de encuestas (${resTxt}) por encuestadora y día — base: ${selBase.value === 'fin' ? 'fecha de fin' : 'fecha de inicio'}.`;
+    `Número de encuestas (${resTxt}) por encuestadora y día — base: ${selBase.value === 'fin' ? 'fecha de fin' : 'fecha de inicio'}${depTxt}.`;
 }
 
 document.getElementById('updated').textContent =
