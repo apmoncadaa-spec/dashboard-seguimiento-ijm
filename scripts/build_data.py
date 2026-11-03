@@ -200,20 +200,42 @@ def _fecha_reasig_iso(v):
 def _leer_bdpersonal():
     """code -> {nombre, ddjj} desde BD Personal.xlsx (hoja 'Exported').
 
-    Columnas E/F (2026-08-31): REASIGNACION = DDJJ vigente si tiene valor
-    (DISTRITO conserva la original como documentación) y FECHA_REASIGNACION =
-    fecha desde la que rige. Con ambas, esta función genera SOLA los tramos
-    de vigencia en CAMBIOS_DDJJ (DISTRITO hasta fecha-1, REASIGNACION desde
-    fecha): ya no hay que editar código para registrar un cambio. La tabla
+    Pares de columnas de reasignación (2026-08-31; varios desde 2026-11-03):
+    "REASIGNACION k" / "FECHA_REASIGNACION k" (k = 1, 2, ...), en orden
+    cronológico. También se acepta el encabezado antiguo de un solo cambio
+    (REASIGNACION / FECHA_REASIGNACION) como k = 1. Las columnas se ubican
+    POR NOMBRE en el encabezado, no por posición.
+      - DISTRITO conserva la DDJJ original (documentación).
+      - REASIGNACION k rige desde FECHA_REASIGNACION k.
+      - La ÚLTIMA reasignación llena es la asignación vigente.
+    Con las fechas, esta función genera SOLA los tramos de vigencia en
+    CAMBIOS_DDJJ (p. ej. B7 Nancy Magan: Muestra nacional hasta 06/10,
+    Puente Piedra - Ventanilla 07/10-23/10, Muestra nacional desde 24/10):
+    ya no hay que editar código para registrar un cambio. La tabla
     CAMBIOS_DDJJ escrita a mano queda como respaldo y el Excel la pisa.
-    Límite: un (1) cambio por persona; un segundo cambio se maneja a mano.
+    Mismas reglas que la sección 5.3.0 de 01. Sincronizacion.do.
     """
     mapa = {}
     if not EXCEL_BDPERSONAL.exists():
         return mapa
     wb = openpyxl.load_workbook(EXCEL_BDPERSONAL, data_only=True, read_only=True)
     ws = wb["Exported"] if "Exported" in wb.sheetnames else wb[wb.sheetnames[0]]
-    filas = ws.iter_rows(min_row=2, values_only=True)
+    filas = ws.iter_rows(values_only=True)
+    encabezado = next(filas, None) or ()
+
+    # Ubicar los pares (REASIGNACION k, FECHA_REASIGNACION k) por nombre.
+    col_reas, col_fecha = {}, {}
+    for i, h in enumerate(encabezado):
+        nom = " ".join(str(h or "").strip().upper().split())
+        m = re.fullmatch(r"(FECHA_)?REASIGNACION(?:[ _]?(\d+))?", nom)
+        if m:
+            k = int(m.group(2) or 1)
+            (col_fecha if m.group(1) else col_reas)[k] = i
+    pares = [(col_reas[k], col_fecha.get(k)) for k in sorted(col_reas)]
+
+    def _celda(r, i):
+        return r[i] if i is not None and i < len(r) else None
+
     for r in filas:
         if not r or r[0] is None:
             continue
@@ -221,21 +243,38 @@ def _leer_bdpersonal():
         if not cod:
             continue
         nombre = str(r[1]).strip() if len(r) > 1 and r[1] else cod
-        ddjj = _ddjj_norm(r[3]) if len(r) > 3 else ""
-        reasig = ""
-        if len(r) > 4 and r[4] is not None and str(r[4]).strip():
-            reasig = _ddjj_norm(r[4])
-        if reasig:
-            fecha = _fecha_reasig_iso(r[5]) if len(r) > 5 else None
-            if fecha and ddjj and reasig != ddjj:
+        original = _ddjj_norm(r[3]) if len(r) > 3 else ""
+
+        # Recorre los cambios en orden y arma tramos cerrados.
+        actual, desde, tramos = original, None, []
+        for ic, ifc in pares:
+            v = _celda(r, ic)
+            if v is None or not str(v).strip():
+                continue
+            nuevo = _ddjj_norm(v)
+            fecha = _fecha_reasig_iso(_celda(r, ifc))
+            if not fecha:
+                if cod not in CAMBIOS_DDJJ:
+                    print(f"   AVISO: cód. {cod} tiene una REASIGNACION ('{nuevo}') "
+                          f"sin su FECHA_REASIGNACION; sus encuestas desde el "
+                          f"cambio previo (o todas, si es el primero) irán a "
+                          f"'{nuevo}'.")
+                actual = nuevo
+                continue
+            if nuevo == actual:
+                continue
+            if desde and fecha <= desde:
+                print(f"   AVISO: cód. {cod}: la reasignación a '{nuevo}' "
+                      f"({fecha}) no es posterior al cambio previo ({desde}); "
+                      f"revisar el orden de las columnas en BD Personal.")
+            if actual:
                 hasta = (date.fromisoformat(fecha) - timedelta(days=1)).isoformat()
-                CAMBIOS_DDJJ[cod] = [(ddjj, None, hasta), (reasig, fecha, None)]
-            elif not fecha and cod not in CAMBIOS_DDJJ:
-                print(f"   AVISO: cód. {cod} tiene REASIGNACION sin "
-                      f"FECHA_REASIGNACION; todas sus encuestas (incluidas "
-                      f"las antiguas) irán a '{reasig}'.")
-            ddjj = reasig  # asignación vigente
-        mapa[cod] = {"nombre": nombre, "ddjj": ddjj}
+                tramos.append((actual, desde, hasta))
+            actual, desde = nuevo, fecha
+        if tramos:
+            tramos.append((actual, desde, None))
+            CAMBIOS_DDJJ[cod] = tramos
+        mapa[cod] = {"nombre": nombre, "ddjj": actual}  # asignación vigente
     wb.close()
     return mapa
 

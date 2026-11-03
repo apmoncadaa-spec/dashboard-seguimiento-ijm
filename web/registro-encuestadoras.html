@@ -223,12 +223,14 @@ function render() {
   const encSet = new Set(encs);
 
   // Si la encuestadora cambió de DDJJ, al filtrar por una DDJJ concreta solo
-  // cuentan sus encuestas dentro del tramo de vigencia de esa DDJJ (las
-  // fechas ISO se comparan como texto).
+  // cuentan sus encuestas dentro de los tramos de vigencia de esa DDJJ (las
+  // fechas ISO se comparan como texto). Una misma DDJJ puede tener VARIOS
+  // tramos (p. ej. B7: M. nacional -> PP-Ventanilla -> M. nacional), por eso
+  // se usa some() y no find() (2026-11-03).
   const enTramo = (info, f) => {
     if (ddjjSel === 'Todos' || !info.asig) return true;
-    const a = info.asig.find(t => t.ddjj === ddjjSel);
-    return !!a && (!a.desde || f >= a.desde) && (!a.hasta || f <= a.hasta);
+    return info.asig.some(a => a.ddjj === ddjjSel &&
+      (!a.desde || f >= a.desde) && (!a.hasta || f <= a.hasta));
   };
 
   // Matriz: conteo[cod][fecha]
